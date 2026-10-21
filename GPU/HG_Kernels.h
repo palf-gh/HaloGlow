@@ -9,28 +9,12 @@
 	Buffers are float4 arrays. Internal pyramid images store premultiplied RGBA
 	in x/y/z/w. After Effects GPU worlds are BGRA128 with straight alpha; the
 	world loader premultiplies and the final store un-premultiplies (spec §6.1).
-	Requires HG_PixelMath.h first.
+	Requires HG_PixelMath.h first. The argument structs are also visible to
+	host C++ (HG_GpuRender.cpp); the bodies compile only in GPU languages.
 */
 
 #ifndef HG_KERNELS_H
 #define HG_KERNELS_H
-
-#if defined(__CUDACC__)
-	#define HG_GLOBAL
-	#define HG_PRIVATE
-	#define HG_F4 float4
-	#define HG_MAKE_F4(a, b, c, d) make_float4((a), (b), (c), (d))
-#elif defined(__OPENCL_VERSION__)
-	#define HG_GLOBAL __global
-	#define HG_PRIVATE
-	#define HG_F4 float4
-	#define HG_MAKE_F4(a, b, c, d) ((float4)((a), (b), (c), (d)))
-#elif defined(__METAL_VERSION__)
-	#define HG_GLOBAL device
-	#define HG_PRIVATE thread
-	#define HG_F4 float4
-	#define HG_MAKE_F4(a, b, c, d) float4((a), (b), (c), (d))
-#endif
 
 #define HG_LOCAL_SIZE 13
 #define HG_LOCAL_RADIUS 6
@@ -89,8 +73,27 @@ typedef struct HG_FinalArgs {
 	float a0;
 	float pad1;
 	HG_PixelParams pixel;
-	float local[HG_LOCAL_SIZE * HG_LOCAL_SIZE];
+	float localWeights[HG_LOCAL_SIZE * HG_LOCAL_SIZE];	// "local" is an OpenCL keyword
 } HG_FinalArgs;
+
+#if defined(__CUDACC__) || defined(__OPENCL_VERSION__) || defined(__METAL_VERSION__)
+
+#if defined(__CUDACC__)
+	#define HG_GLOBAL
+	#define HG_PRIVATE
+	#define HG_F4 float4
+	#define HG_MAKE_F4(a, b, c, d) make_float4((a), (b), (c), (d))
+#elif defined(__OPENCL_VERSION__)
+	#define HG_GLOBAL __global
+	#define HG_PRIVATE
+	#define HG_F4 float4
+	#define HG_MAKE_F4(a, b, c, d) ((float4)((a), (b), (c), (d)))
+#elif defined(__METAL_VERSION__)
+	#define HG_GLOBAL device
+	#define HG_PRIVATE thread
+	#define HG_F4 float4
+	#define HG_MAKE_F4(a, b, c, d) float4((a), (b), (c), (d))
+#endif
 
 HG_FN HG_RGBA hg_rgba(float r, float g, float b, float a)
 {
@@ -140,6 +143,13 @@ HG_FN HG_RGBA hg_load_world(HG_GLOBAL const HG_F4 *p, HG_Buf b, int x, int y)
 	return hg_rgba(s.r * s.a, s.g * s.a, s.b * s.a, s.a);
 }
 
+HG_FN float hg_finite_clamp(float x)
+{
+	const float big = 3.402823466e38f;
+	if (!(x == x)) return 0.0f;
+	return x > big ? big : (x < -big ? -big : x);
+}
+
 HG_FN void hg_store(HG_GLOBAL HG_F4 *p, HG_Buf b, int x, int y, HG_RGBA v)
 {
 	p[(y - b.y0) * b.pitch + (x - b.x0)] = HG_MAKE_F4(v.r, v.g, v.b, v.a);
@@ -152,10 +162,11 @@ HG_FN void hg_store_world(HG_GLOBAL HG_F4 *p, HG_Buf b, int x, int y, HG_RGBA v)
 	float g = 0.0f;
 	float bl = 0.0f;
 	if (v.a > 0.0f) {
-		const float inv = 1.0f / v.a;
-		r = v.r * inv;
-		g = v.g * inv;
-		bl = v.b * inv;
+		// Divide, never multiply by 1/a: a subnormal alpha overflows 1/a to
+		// infinity while the quotient itself stays finite (§12.2).
+		r = hg_finite_clamp(v.r / v.a);
+		g = hg_finite_clamp(v.g / v.a);
+		bl = hg_finite_clamp(v.b / v.a);
 	}
 	p[(y - b.y0) * b.pitch + (x - b.x0)] = HG_MAKE_F4(bl, g, r, v.a);
 }
@@ -296,7 +307,7 @@ HG_FN void hg_final_body(HG_GLOBAL const HG_F4 *src, HG_GLOBAL HG_F4 *dst, HG_GL
 		for (int j = 0; j < HG_LOCAL_SIZE; ++j) {
 			HG_RGBA row = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
 			for (int i = 0; i < HG_LOCAL_SIZE; ++i) {
-				const float w = a.local[j * HG_LOCAL_SIZE + i];
+				const float w = a.localWeights[j * HG_LOCAL_SIZE + i];
 				if (w != 0.0f) {
 					hg_mad(&row, w, hg_extract(a.pixel, hg_load_world(src, a.src, x + i - HG_LOCAL_RADIUS,
 																	   y + j - HG_LOCAL_RADIUS)));
@@ -317,5 +328,7 @@ HG_FN void hg_final_body(HG_GLOBAL const HG_F4 *src, HG_GLOBAL HG_F4 *dst, HG_GL
 	const HG_RGBA out = hg_composite(a.pixel, hg_load_world(src, a.src, x, y), glow);
 	hg_store_world(dst, a.dst, x, y, out);
 }
+
+#endif // GPU languages
 
 #endif // HG_KERNELS_H

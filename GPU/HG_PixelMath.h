@@ -28,6 +28,7 @@
 	#define HG_POW(x, y) pow((x), (y))
 	#define HG_EXP(x) exp(x)
 #elif defined(__METAL_VERSION__)
+	#include <metal_stdlib>
 	#define HG_FN static inline
 	#define HG_ISFINITE(x) metal::isfinite(x)
 	#define HG_POW(x, y) metal::precise::pow((x), (y))
