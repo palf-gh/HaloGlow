@@ -51,7 +51,13 @@ in the same change when behaviour, parameters or guarantees move.
 
 - Windows development build: `cmake -S . -B build\Win` then
   `cmake --build build\Win --config Debug`.
-- Run `ctest --test-dir build\Win -C Debug` after core changes; the test
-  executable keeps asserts enabled in every configuration.
+- Run `ctest --test-dir build\Win -C Release` after core or kernel changes:
+  `hg_core_tests` (own CHECK macro, valid in Release) and `hg_gpu_parity`
+  (CUDA and OpenCL against the CPU reference).
+- macOS: `cmake -S . -B build/Mac -G Xcode`, build Debug and Release, then
+  `ctest --test-dir build/Mac -C Release` (`hg_metal_parity`).
+- Coefficient-table changes: rebuild `hg_impulse`, run `tools/calibrate_v1.py`
+  (or a new versioned script), commit the table, the manifest and the script
+  together, and bump `hg::kAlgorithmVersion` once a version has shipped.
 - Record every agent-authored project-change session in
   `../.agents/production-record.md`.

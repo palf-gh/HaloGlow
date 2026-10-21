@@ -10,6 +10,10 @@
 if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
 	set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS deployment version" FORCE)
 endif()
+# Universal plug-in: the core library must carry both slices as well.
+if(APPLE AND NOT DEFINED CMAKE_OSX_ARCHITECTURES)
+	set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "macOS architectures" FORCE)
+endif()
 
 cmake_minimum_required(VERSION 3.18)
 project(HaloGlow LANGUAGES C CXX)
@@ -139,6 +143,7 @@ function(hg_embed_kernel out_header symbol)
 		VERBATIM)
 endfunction()
 
+set(HG_KERNEL_HEADERS)
 set(HG_SHARED_KERNEL_HEADERS
 	"${CMAKE_CURRENT_SOURCE_DIR}/GPU/HG_PixelMath.h"
 	"${CMAKE_CURRENT_SOURCE_DIR}/GPU/HG_Kernels.h")
@@ -153,12 +158,20 @@ endif()
 if(HG_OPENCL_AVAILABLE)
 	hg_embed_kernel("${HG_GENERATED_DIR}/HG_Kernel_cl.h" kHG_OpenCLSource
 		${HG_SHARED_KERNEL_HEADERS} "${CMAKE_CURRENT_SOURCE_DIR}/GPU/HG_Kernel.cl")
-	list(APPEND HG_PLUGIN_SOURCES GPU/HG_Kernel.cl "${HG_GENERATED_DIR}/HG_Kernel_cl.h")
+	list(APPEND HG_PLUGIN_SOURCES GPU/HG_Kernel.cl)
+	list(APPEND HG_KERNEL_HEADERS "${HG_GENERATED_DIR}/HG_Kernel_cl.h")
 endif()
 if(HG_METAL_AVAILABLE)
 	hg_embed_kernel("${HG_GENERATED_DIR}/HG_Kernel_metal.h" kHG_MetalSource
 		${HG_SHARED_KERNEL_HEADERS} "${CMAKE_CURRENT_SOURCE_DIR}/GPU/HG_Kernel.metal")
-	list(APPEND HG_PLUGIN_SOURCES GPU/HG_Kernel.metal Source/HG_Metal.mm "${HG_GENERATED_DIR}/HG_Kernel_metal.h")
+	list(APPEND HG_PLUGIN_SOURCES GPU/HG_Kernel.metal Source/HG_Metal.mm Source/HG_MetalBackend.h)
+	list(APPEND HG_KERNEL_HEADERS "${HG_GENERATED_DIR}/HG_Kernel_metal.h")
+endif()
+
+# One owner for the generated kernel headers (Xcode refuses a custom command
+# shared by several targets); the plug-in and the parity tests depend on it.
+if(HG_KERNEL_HEADERS)
+	add_custom_target(haloglow_kernels DEPENDS ${HG_KERNEL_HEADERS})
 endif()
 
 set(HG_PIPL_R "${CMAKE_CURRENT_SOURCE_DIR}/PiPL/HaloGlowPiPL.r")
@@ -232,10 +245,14 @@ elseif(APPLE)
 	add_custom_target(HaloGlow_pipl DEPENDS "${HG_PIPL_RSRC_Debug}" "${HG_PIPL_RSRC_Release}")
 	add_library(HaloGlow MODULE ${HG_PLUGIN_SOURCES})
 	add_dependencies(HaloGlow HaloGlow_pipl)
-	set(BUNDLE_EXECUTABLE "HaloGlow")
+	# CFBundleExecutable must name the binary of each configuration, or the
+	# ad-hoc signature does not cover the Debug executable.
 	set(BUNDLE_NAME "HaloGlow")
 	set(BUNDLE_IDENTIFIER "com.palf.haloglow")
-	configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Mac/Info.plist.in" "${CMAKE_CURRENT_BINARY_DIR}/Info.plist" @ONLY)
+	set(BUNDLE_EXECUTABLE "HaloGlow_debug")
+	configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Mac/Info.plist.in" "${CMAKE_CURRENT_BINARY_DIR}/Info_Debug.plist" @ONLY)
+	set(BUNDLE_EXECUTABLE "HaloGlow")
+	configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Mac/Info.plist.in" "${CMAKE_CURRENT_BINARY_DIR}/Info_Release.plist" @ONLY)
 	set_target_properties(HaloGlow PROPERTIES
 		BUNDLE TRUE
 		BUNDLE_EXTENSION "plugin"
@@ -250,7 +267,7 @@ elseif(APPLE)
 	# cache sees the new PiPL; the ad-hoc signature must be the last step.
 	add_custom_command(TARGET HaloGlow POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:HaloGlow>/Contents/Resources"
-		COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_BINARY_DIR}/Info.plist"
+		COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_BINARY_DIR}/Info_$<IF:$<CONFIG:Debug>,Debug,Release>.plist"
 			"$<TARGET_BUNDLE_DIR:HaloGlow>/Contents/Info.plist"
 		COMMAND ${CMAKE_COMMAND} -E copy "$<IF:$<CONFIG:Debug>,${HG_PIPL_RSRC_Debug},${HG_PIPL_RSRC_Release}>"
 			"$<TARGET_BUNDLE_DIR:HaloGlow>/Contents/Resources/HaloGlowPiPL.rsrc"
@@ -268,6 +285,9 @@ target_include_directories(HaloGlow PRIVATE
 	"${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/Source" "${CMAKE_CURRENT_SOURCE_DIR}/GPU"
 	"${HG_GENERATED_DIR}")
 target_link_libraries(HaloGlow PRIVATE haloglow_core)
+if(TARGET haloglow_kernels)
+	add_dependencies(HaloGlow haloglow_kernels)
+endif()
 target_compile_definitions(HaloGlow PRIVATE $<$<CONFIG:Debug>:HG_DEBUG_BUILD=1>)
 foreach(_cfg Debug Release RelWithDebInfo MinSizeRel)
 	string(TOUPPER "${_cfg}" _up)
@@ -314,10 +334,10 @@ if(HG_CUDA_AVAILABLE OR HG_OPENCL_AVAILABLE)
 	if(HG_CUDA_AVAILABLE)
 		list(APPEND _parity_sources GPU/HG_Kernel.cu)
 	endif()
-	if(HG_OPENCL_AVAILABLE)
-		list(APPEND _parity_sources "${HG_GENERATED_DIR}/HG_Kernel_cl.h")
-	endif()
 	add_executable(hg_gpu_parity ${_parity_sources})
+	if(TARGET haloglow_kernels)
+		add_dependencies(hg_gpu_parity haloglow_kernels)
+	endif()
 	target_include_directories(hg_gpu_parity PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/GPU" "${HG_GENERATED_DIR}")
 	target_link_libraries(hg_gpu_parity PRIVATE haloglow_core)
 	if(HG_CUDA_AVAILABLE)
@@ -337,4 +357,12 @@ if(HG_CUDA_AVAILABLE OR HG_OPENCL_AVAILABLE)
 		target_link_libraries(hg_gpu_parity PRIVATE OpenCL::OpenCL)
 	endif()
 	add_test(NAME hg_gpu_parity COMMAND hg_gpu_parity)
+endif()
+if(HG_METAL_AVAILABLE)
+	add_executable(hg_metal_parity tests/hg_metal_parity.mm Source/HG_GpuRender.cpp)
+	add_dependencies(hg_metal_parity haloglow_kernels)
+	target_include_directories(hg_metal_parity PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/GPU" "${HG_GENERATED_DIR}")
+	target_link_libraries(hg_metal_parity PRIVATE haloglow_core ${METAL_LIBRARY} ${FOUNDATION_LIBRARY})
+	set_source_files_properties(tests/hg_metal_parity.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+	add_test(NAME hg_metal_parity COMMAND hg_metal_parity)
 endif()
