@@ -34,7 +34,7 @@ public:
 	virtual bool Finish() = 0;
 };
 
-// A host GPU world: BGRA128 straight alpha, origin in layer coordinates.
+// A host GPU world: BGRA128, premultiplied, origin in layer coordinates.
 struct World {
 	void *mem = nullptr;
 	int x0 = 0;

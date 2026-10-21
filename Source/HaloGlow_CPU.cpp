@@ -2,9 +2,10 @@
 	HaloGlow_CPU.cpp
 
 	CPU SmartRender: the numeric-format adapter (§6.1) around the core.
-	8-bit (0..255), 16-bit (0..PF_MAX_CHAN16) and 32-bit float worlds are read
-	as straight ARGB, premultiplied into FP32 RGBA, rendered by hg::RenderCPU
-	and stored back straight with rounding and range limits in one place.
+	8-bit (0..255), 16-bit (0..PF_MAX_CHAN16) and 32-bit float worlds arrive
+	premultiplied like the core, so they are only normalised to FP32 RGBA,
+	rendered by hg::RenderCPU and stored back with rounding and range limits
+	in one place.
 */
 
 #include "HaloGlow.h"
@@ -67,11 +68,10 @@ void ReadWorld(PF_EffectWorld *w, hg::Image &img)
 		const Pixel *row = PixelAt<Pixel>(w, 0, y);
 		HG_RGBA *dst = img.Row(img.rect.y0 + y);
 		for (int x = 0; x < w->width; ++x) {
-			const HG_RGBA s = hg_sanitise(HG_RGBA { static_cast<float>(row[x].red * inv),
-													static_cast<float>(row[x].green * inv),
-													static_cast<float>(row[x].blue * inv),
-													static_cast<float>(row[x].alpha * inv) });
-			dst[x] = HG_RGBA { s.r * s.a, s.g * s.a, s.b * s.a, s.a };
+			dst[x] = hg_sanitise(HG_RGBA { static_cast<float>(row[x].red * inv),
+										   static_cast<float>(row[x].green * inv),
+										   static_cast<float>(row[x].blue * inv),
+										   static_cast<float>(row[x].alpha * inv) });
 		}
 	}
 }
@@ -83,24 +83,16 @@ void WriteWorld(const hg::Image &img, PF_EffectWorld *w)
 		Pixel *row = PixelAt<Pixel>(w, 0, y);
 		for (int x = 0; x < w->width; ++x) {
 			const HG_RGBA p = img.At(w->origin_x + x, w->origin_y + y);
-			double r = 0.0, g = 0.0, b = 0.0;
-			if (p.a > 0.0f) {
-				// Un-premultiply in FP64 so a tiny alpha cannot overflow (§6.1).
-				const double inv = 1.0 / static_cast<double>(p.a);
-				r = p.r * inv;
-				g = p.g * inv;
-				b = p.b * inv;
-			}
-			row[x].red = Channel<Pixel>::Store(r);
-			row[x].green = Channel<Pixel>::Store(g);
-			row[x].blue = Channel<Pixel>::Store(b);
+			row[x].red = Channel<Pixel>::Store(p.r);
+			row[x].green = Channel<Pixel>::Store(p.g);
+			row[x].blue = Channel<Pixel>::Store(p.b);
 			row[x].alpha = Channel<Pixel>::Store(std::min(1.0, static_cast<double>(p.a)));
 		}
 	}
 }
 
-// Bypass (§3.2): straight RGB copied untouched, alpha faded by Source Opacity;
-// at Source Opacity 100 the output is the input byte for byte.
+// Bypass (§3.2): at Source Opacity 100 the output is the input byte for byte;
+// otherwise premultiplied RGB and alpha are faded together.
 template <typename Pixel>
 void Bypass(PF_EffectWorld *in, PF_EffectWorld *out, const hg::Settings &s)
 {
@@ -114,7 +106,13 @@ void Bypass(PF_EffectWorld *in, PF_EffectWorld *out, const hg::Settings &s)
 			Pixel v {};
 			if (!s.glowOnly && in && lx >= 0 && ly >= 0 && lx < in->width && ly < in->height) {
 				v = *PixelAt<Pixel>(in, lx, ly);
-				if (p != 1.0) v.alpha = Channel<Pixel>::Store(p * v.alpha / Channel<Pixel>::kMax);
+				if (p != 1.0) {
+					const double k = p / Channel<Pixel>::kMax;
+					v.red = Channel<Pixel>::Store(k * v.red);
+					v.green = Channel<Pixel>::Store(k * v.green);
+					v.blue = Channel<Pixel>::Store(k * v.blue);
+					v.alpha = Channel<Pixel>::Store(k * v.alpha);
+				}
 			}
 			row[x] = v;
 		}

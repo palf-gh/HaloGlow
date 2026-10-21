@@ -191,12 +191,10 @@ PF_Err PreRender(PF_InData *in_data, PF_OutData *out_data, PF_PreRenderExtra *ex
 		if (autoLuminance && extra->cb->GuidMixInPtr) {
 			// Auto coefficients are state outside the parameters: mix them into
 			// the frame cache key so a refreshed cache re-renders (§3.12.2).
-			struct {
-				float l[3];
-				int state;
-			} key = { { snapshot.luminance[0], snapshot.luminance[1], snapshot.luminance[2] },
-					  static_cast<int>(snapshot.state) };
-			ERR(extra->cb->GuidMixInPtr(in_data->effect_ref, sizeof(key), &key));
+			// Only the coefficients change pixels; a Verified -> Cached state
+			// change with the same values must not invalidate cached frames.
+			const float key[3] = { snapshot.luminance[0], snapshot.luminance[1], snapshot.luminance[2] };
+			ERR(extra->cb->GuidMixInPtr(in_data->effect_ref, sizeof(key), key));
 		}
 	}
 	if (err) {
