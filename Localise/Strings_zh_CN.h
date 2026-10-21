@@ -9,6 +9,14 @@ namespace AELocalise {
 namespace ZH_CN {
 inline const char *GetString(LocKey::Key key) {
   switch (key) {
+  case LocKey::STR_GPU_STATUS_NAME:
+    return "GPU 加速";
+  case LocKey::STR_GPU_STATUS_ACTIVE:
+    return "GPU 加速：已启用";
+  case LocKey::STR_GPU_STATUS_READY:
+    return "GPU 加速：已就绪";
+  case LocKey::STR_GPU_STATUS_UNAVAILABLE:
+    return "GPU 加速：不可用";
   case LocKey::STR_TOPIC_BASIC:
     return "基本";
   case LocKey::STR_INTENSITY:

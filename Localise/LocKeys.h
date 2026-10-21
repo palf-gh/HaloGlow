@@ -6,6 +6,10 @@
 // persisted popup values and never changes between languages.
 namespace LocKey {
 enum Key {
+  STR_GPU_STATUS_NAME,
+  STR_GPU_STATUS_ACTIVE,
+  STR_GPU_STATUS_READY,
+  STR_GPU_STATUS_UNAVAILABLE,
   STR_TOPIC_BASIC,
   STR_INTENSITY,
   STR_SIZE,

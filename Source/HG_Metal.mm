@@ -18,6 +18,7 @@
 #import <Metal/Metal.h>
 
 #include "HG_MetalBackend.h"
+#include "HG_GpuStatus.h"
 #include "HG_Kernel_metal.h"
 
 #include <new>
@@ -170,6 +171,8 @@ PF_Err HG_MetalDeviceSetup(PF_InData *in_data, PF_OutData *out_data, PF_GPUDevic
 		d->final = CFBridgingRetain(pipelines[2]);
 		extra->output->gpu_data = h;
 		out_data->out_flags2 = PF_OutFlag2_SUPPORTS_GPU_RENDER_F32;
+		const char *deviceName = device.name.UTF8String;
+		HG_RecordGpuDevice("Metal", deviceName ? deviceName : "");
 	}
 	return PF_Err_NONE;
 }

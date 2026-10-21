@@ -9,6 +9,14 @@ namespace AELocalise {
 namespace JA_JP {
 inline const char *GetString(LocKey::Key key) {
   switch (key) {
+  case LocKey::STR_GPU_STATUS_NAME:
+    return "GPU アクセラレーション";
+  case LocKey::STR_GPU_STATUS_ACTIVE:
+    return "GPU アクセラレーション: 有効";
+  case LocKey::STR_GPU_STATUS_READY:
+    return "GPU アクセラレーション: 準備完了";
+  case LocKey::STR_GPU_STATUS_UNAVAILABLE:
+    return "GPU アクセラレーション: 利用不可";
   case LocKey::STR_TOPIC_BASIC:
     return "基本";
   case LocKey::STR_INTENSITY:

@@ -113,6 +113,22 @@ PF_Err HG_ParamsSetup(PF_InData *in_data, PF_OutData *out_data)
 	PF_Err err = PF_Err_NONE;
 	const hg::Settings d;
 
+	// Read-only GPU status, drawn by HaloGlow_GpuStatusUI.cpp.
+	ERR(HG_RegisterCustomUI(in_data));
+	if (!err) {
+		PF_ParamDef def;
+		AEFX_CLR_STRUCT(def);
+		const std::string name = Loc(LocKey::STR_GPU_STATUS_NAME, in_data);
+		def.param_type = PF_Param_NO_DATA;
+		PF_STRNNCPY(def.PF_DEF_NAME, name.c_str(), sizeof(def.PF_DEF_NAME));
+		def.flags = PF_ParamFlag_SUPERVISE | PF_ParamFlag_CANNOT_TIME_VARY;
+		def.ui_flags = PF_PUI_CONTROL | PF_PUI_DONT_ERASE_CONTROL;
+		def.ui_width = 280;
+		def.ui_height = 40;
+		def.uu.id = HG_GPU_STATUS;
+		ERR(PF_ADD_PARAM(in_data, -1, &def));
+	}
+
 	ERR(AddTopic(in_data, LocKey::STR_TOPIC_BASIC, HG_TOPIC_BASIC_START));
 	ERR(AddFloat(in_data, LocKey::STR_INTENSITY, 0, 8, 0, 8, d.intensity, PF_Precision_HUNDREDTHS, HG_INTENSITY));
 	ERR(AddFloat(in_data, LocKey::STR_SIZE, 0, 512, 0, 512, d.size, PF_Precision_TENTHS, HG_SIZE));

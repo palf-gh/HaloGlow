@@ -316,6 +316,9 @@ extern "C" DllExport PF_Err EffectMain(PF_Cmd cmd, PF_InData *in_data, PF_OutDat
 		case PF_Cmd_UPDATE_PARAMS_UI:
 			err = HG_UpdateParamsUI(in_data, out_data, params);
 			break;
+		case PF_Cmd_EVENT:
+			err = HG_HandleEvent(in_data, out_data, static_cast<PF_EventExtra *>(extra));
+			break;
 		case PF_Cmd_USER_CHANGED_PARAM:
 			err = UserChangedParam(in_data, out_data, params, static_cast<PF_UserChangedParamExtra *>(extra));
 			break;

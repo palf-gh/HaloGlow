@@ -31,6 +31,7 @@ Gaussian. The design is specified in [`docs/HaloGlow_仕様書.md`](docs/HaloGlo
 
 | Group | Parameter | Range | Default |
 | --- | --- | --- | --- |
+| Status | GPU Acceleration (read-only) | Active / ready / unavailable, with framework and device | — |
 | Basic | Intensity | 0–8 | 1 |
 | | Size (90 % energy radius, px) | 0–512 | 64 |
 | | Threshold | 0–1600 % (slider 0–100 %) | 25 % |
@@ -108,6 +109,7 @@ HaloGlowはAdobe After Effects用のMITライセンスのグローエフェク�
 
 | グループ | パラメータ | 範囲 | 既定値 |
 | --- | --- | --- | --- |
+| 状態 | GPU アクセラレーション（表示のみ） | 有効／準備完了／利用不可。有効時はフレームワークとデバイス名も表示 | — |
 | 基本 | 強度 | 0〜8 | 1 |
 | | サイズ（エネルギー90%の半径、px） | 0〜512 | 64 |
 | | しきい値 | 0〜1600%（スライダーは0〜100%） | 25% |
@@ -172,6 +174,7 @@ HaloGlow 是一款采用 MIT 许可证的 Adobe After Effects 光晕效果。它
 
 | 分组 | 参数 | 范围 | 默认值 |
 | --- | --- | --- | --- |
+| 状态 | GPU 加速（只读） | 已启用 / 已就绪 / 不可用；启用时显示框架和设备名称 | — |
 | 基本 | 强度 | 0–8 | 1 |
 | | 大小（90% 能量半径，px） | 0–512 | 64 |
 | | 阈值 | 0–1600%（滑块 0–100%） | 25% |
@@ -236,6 +239,7 @@ HaloGlow는 MIT 라이선스의 Adobe After Effects 글로우 이펙트입니다
 
 | 그룹 | 매개변수 | 범위 | 기본값 |
 | --- | --- | --- | --- |
+| 상태 | GPU 가속(표시 전용) | 활성 / 준비 완료 / 사용 불가, 활성 시 프레임워크와 장치 이름 표시 | — |
 | 기본 | 강도 | 0–8 | 1 |
 | | 크기(에너지 90% 반경, px) | 0–512 | 64 |
 | | 임계값 | 0–1600%(슬라이더 0–100%) | 25% |

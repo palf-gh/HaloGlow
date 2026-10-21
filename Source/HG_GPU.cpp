@@ -15,6 +15,7 @@
 // macros (PiPL needs them) that would collide with enumerators in the CUDA
 // headers.
 #if defined(HG_HAS_CUDA)
+	#include <cuda.h>
 	#include <cuda_runtime.h>
 #endif
 #if defined(HG_HAS_OPENCL)
@@ -23,7 +24,9 @@
 
 #include "HaloGlow.h"
 #include "HG_GpuRender.h"
+#include "HG_GpuStatus.h"
 
+#include <cstdint>
 #include <cstring>
 #include <new>
 
@@ -44,6 +47,31 @@ extern "C" cudaError_t HG_CudaSynchronize(cudaStream_t);
 #endif
 
 namespace {
+
+#if defined(HG_HAS_CUDA)
+// Driver API only (nvcuda.dll is delay-loaded and only touched on CUDA hosts);
+// no CUDA runtime call happens during device setup.
+std::string CudaDeviceName(void *device)
+{
+	char name[256] = {};
+	const CUdevice d = static_cast<CUdevice>(reinterpret_cast<std::uintptr_t>(device));
+	return cuDeviceGetName(name, static_cast<int>(sizeof(name)), d) == CUDA_SUCCESS ? std::string(name)
+																					  : std::string();
+}
+#endif
+
+#if defined(HG_HAS_OPENCL)
+std::string OpenCLDeviceName(cl_device_id device)
+{
+	size_t size = 0;
+	if (!device || clGetDeviceInfo(device, CL_DEVICE_NAME, 0, nullptr, &size) != CL_SUCCESS || size <= 1)
+		return std::string();
+	std::string name(size, ' ');
+	if (clGetDeviceInfo(device, CL_DEVICE_NAME, size, &name[0], nullptr) != CL_SUCCESS) return std::string();
+	name.resize(std::strlen(name.c_str()));
+	return name;
+}
+#endif
 
 // Device memory through the host so After Effects can account for it.
 class HostMemoryBackend : public hg::gpu::Backend {
@@ -206,6 +234,7 @@ PF_Err SetupOpenCL(PF_InData *in_data, PF_OutData *out_data, PF_GPUDeviceSetupEx
 	}
 	extra->output->gpu_data = h;
 	out_data->out_flags2 = PF_OutFlag2_SUPPORTS_GPU_RENDER_F32;
+	HG_RecordGpuDevice("OpenCL", OpenCLDeviceName(device));
 	return PF_Err_NONE;
 }
 #endif
@@ -219,10 +248,17 @@ PF_Err HG_GPUDeviceSetup(PF_InData *in_data, PF_OutData *out_data, PF_GPUDeviceS
 	if (in_data->appl_id == kAppID_Premiere) return PF_Err_NONE;	// After Effects only (§2.1)
 	switch (extra->input->what_gpu) {
 #if defined(HG_HAS_CUDA)
-	case PF_GPU_Framework_CUDA:
+	case PF_GPU_Framework_CUDA: {
 		// Kernels are linked statically; no CUDA runtime call is needed here.
+		AEFX_SuiteScoper<PF_GPUDeviceSuite1> gpu(in_data, kPFGPUDeviceSuite, kPFGPUDeviceSuiteVersion1, out_data);
+		PF_GPUDeviceInfo info;
+		AEFX_CLR_STRUCT(info);
+		const PF_Err err = gpu->GetDeviceInfo(in_data->effect_ref, extra->input->device_index, &info);
+		if (err) return err;
 		out_data->out_flags2 = PF_OutFlag2_SUPPORTS_GPU_RENDER_F32;
+		HG_RecordGpuDevice("CUDA", CudaDeviceName(info.devicePV));
 		return PF_Err_NONE;
+	}
 #endif
 #if defined(HG_HAS_OPENCL)
 	case PF_GPU_Framework_OPENCL:
@@ -242,6 +278,7 @@ PF_Err HG_GPUDeviceSetdown(PF_InData *in_data, PF_OutData *out_data, PF_GPUDevic
 {
 	(void)out_data;
 	if (!extra || !extra->input) return PF_Err_NONE;
+	HG_ClearGpuDevice();
 #if defined(HG_HAS_OPENCL)
 	if (extra->input->what_gpu == PF_GPU_Framework_OPENCL && extra->input->gpu_data) {
 		PF_Handle h = static_cast<PF_Handle>(const_cast<void *>(extra->input->gpu_data));
@@ -317,8 +354,11 @@ PF_Err HG_SmartRenderGPU(PF_InData *in_data, PF_OutData *out_data, PF_SmartRende
 		}
 #endif
 #if defined(HG_HAS_METAL)
-		case PF_GPU_Framework_METAL:
-			return HG_MetalRender(in_data, out_data, extra, plan, src, dst);
+		case PF_GPU_Framework_METAL: {
+			const PF_Err metalErr = HG_MetalRender(in_data, out_data, extra, plan, src, dst);
+			HG_SetLastRenderUsedGpu(metalErr == PF_Err_NONE);
+			return metalErr;
+		}
 #endif
 		default:
 			return PF_Err_UNRECOGNIZED_PARAM_TYPE;
@@ -326,6 +366,9 @@ PF_Err HG_SmartRenderGPU(PF_InData *in_data, PF_OutData *out_data, PF_SmartRende
 	} catch (const std::bad_alloc &) {
 		return PF_Err_OUT_OF_MEMORY;
 	}
+	// Only GPU renders update the status; interleaved CPU renders leave the
+	// device Ready until the host sends GPU_DEVICE_SETDOWN.
+	HG_SetLastRenderUsedGpu(status == hg::gpu::Status::Ok);
 	// Never confirm an incomplete GPU image (§10.3).
 	if (status == hg::gpu::Status::OutOfMemory) return PF_Err_OUT_OF_MEMORY;
 	if (status != hg::gpu::Status::Ok) return PF_Err_INTERNAL_STRUCT_DAMAGED;

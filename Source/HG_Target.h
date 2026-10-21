@@ -53,10 +53,11 @@
 //
 // OUT_FLAGS = PF_OutFlag_DEEP_COLOR_AWARE (1<<25 = 33554432)
 //   | PF_OutFlag_SEND_UPDATE_PARAMS_UI (1<<26 = 67108864)
+//   | PF_OutFlag_CUSTOM_UI (1<<15 = 32768, the GPU status control)
 //   | PF_OutFlag_I_EXPAND_BUFFER (1<<9 = 512)
-//   = 100663808.
+//   = 100696576.
 // Never PF_OutFlag_PIX_INDEPENDENT: the glow spreads pixels.
-#define OUT_FLAGS		100663808
+#define OUT_FLAGS		100696576
 
 // OUT_FLAGS2 base = PF_OutFlag2_SUPPORTS_SMART_RENDER (1<<10 = 1024)
 //   | PF_OutFlag2_FLOAT_COLOR_AWARE (1<<12 = 4096)

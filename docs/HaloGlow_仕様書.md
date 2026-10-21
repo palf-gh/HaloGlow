@@ -813,36 +813,39 @@ Match Nameとパラメータの保存IDは公開後に変更しない。リポ�
 
 ### 18.2 パラメータの保存ID
 
-ホストが保存するパラメータIDを次に固定する。既存IDの番号変更と、廃止IDの再利用を禁じる。新しい項目はHG_NUM_PARAMSの直前へ追加する。UIの並び順は別のindexで管理する。
+ホストが保存するパラメータIDを次に固定する。初回公開前の0.1.0開発中に、GPUステータス表示をID 1へ追加して以降を繰り下げた（利用者の承認による）。公開後は番号を変えない。既存IDの番号変更と、廃止IDの再利用を禁じる。新しい項目はHG_NUM_PARAMSの直前へ追加する。UIの並び順は別のindexで管理する。
 
 ```text
  0  HG_INPUT
- 1  HG_TOPIC_BASIC_START        topic: 基本
- 2  HG_INTENSITY                float 0〜8、既定1
- 3  HG_SIZE                     float 0〜512 px、既定64
- 4  HG_THRESHOLD                float 0〜1600 %（slider 0〜100）、既定25
- 5  HG_THRESHOLD_SOFTNESS       float 0〜100 %、既定50
- 6  HG_TOPIC_BASIC_END
- 7  HG_TOPIC_SHAPE_START        topic: 形状
- 8  HG_WIDTH                    float 0〜400 %、既定100
- 9  HG_HEIGHT                   float 0〜400 %、既定100
-10  HG_FALLOFF                  float 0〜100、既定50
-11  HG_TOPIC_SHAPE_END
-12  HG_TOPIC_TONE_START         topic: 色・階調
-13  HG_GAMMA                    float 0.1〜3、既定1
-14  HG_SATURATION               float 0〜200 %、既定100
-15  HG_COLOUR_STRENGTH          float 0〜100 %、既定0
-16  HG_COLOUR_1                 colour、既定 #FFE4C4
-17  HG_COLOUR_2                 colour、既定 #FFFFFF
-18  HG_LUMINANCE_SPACE          popup、既定 Auto(1)
-19  HG_TOPIC_TONE_END
-20  HG_TOPIC_OUTPUT_START       topic: 出力
-21  HG_GLOW_OPACITY             float 0〜100 %、既定100
-22  HG_SOURCE_OPACITY           float 0〜100 %、既定100
-23  HG_GLOW_ONLY                checkbox、既定off
-24  HG_TOPIC_OUTPUT_END
-25  HG_ALGORITHM_VERSION        非表示の整数。新規適用時に現行版、既存の保存値は維持
+ 1  HG_GPU_STATUS               表示専用（PF_Param_NO_DATA、カスタムUI）
+ 2  HG_TOPIC_BASIC_START        topic: 基本
+ 3  HG_INTENSITY                float 0〜8、既定1
+ 4  HG_SIZE                     float 0〜512 px、既定64
+ 5  HG_THRESHOLD                float 0〜1600 %（slider 0〜100）、既定25
+ 6  HG_THRESHOLD_SOFTNESS       float 0〜100 %、既定50
+ 7  HG_TOPIC_BASIC_END
+ 8  HG_TOPIC_SHAPE_START        topic: 形状
+ 9  HG_WIDTH                    float 0〜400 %、既定100
+10  HG_HEIGHT                   float 0〜400 %、既定100
+11  HG_FALLOFF                  float 0〜100、既定50
+12  HG_TOPIC_SHAPE_END
+13  HG_TOPIC_TONE_START         topic: 色・階調
+14  HG_GAMMA                    float 0.1〜3、既定1
+15  HG_SATURATION               float 0〜200 %、既定100
+16  HG_COLOUR_STRENGTH          float 0〜100 %、既定0
+17  HG_COLOUR_1                 colour、既定 #FFE4C4
+18  HG_COLOUR_2                 colour、既定 #FFFFFF
+19  HG_LUMINANCE_SPACE          popup、既定 Auto(1)
+20  HG_TOPIC_TONE_END
+21  HG_TOPIC_OUTPUT_START       topic: 出力
+22  HG_GLOW_OPACITY             float 0〜100 %、既定100
+23  HG_SOURCE_OPACITY           float 0〜100 %、既定100
+24  HG_GLOW_ONLY                checkbox、既定off
+25  HG_TOPIC_OUTPUT_END
+26  HG_ALGORITHM_VERSION        非表示の整数。新規適用時に現行版、既存の保存値は維持
 ```
+
+HG_GPU_STATUSは、エフェクトコントロールの先頭に置く読み取り専用の表示である。ホストがGPUデバイスを準備したか、直前のレンダーがGPUで完了したかを示し、使用中はフレームワーク名とデバイス名を添える。画像処理の操作ではないので、第4章の16項目には数えない。デバイス名の記録はデバイスのセットアップ時に行い、レンダーは完了したかどうかの原子的な値だけを書く。
 
 HG_ALGORITHM_VERSIONは、係数表と数式の版を保存するための非表示パラメータとする。新規に適用したインスタンスには現行版を書き込み、既存プロジェクトの値は書き換えない。レンダーはこの版に対応する係数表を使う。対応する表を持たない将来の版を読み込んだ場合はエラーとし、別の版で黙って描画しない。
 
@@ -873,9 +876,13 @@ TOPIC_OUTPUT         Output             出力               输出           �
 GLOW_OPACITY         Glow Opacity       グローの不透明度   光晕不透明度   글로우 불투명도
 SOURCE_OPACITY       Source Opacity     元画像の不透明度   源图像不透明度 원본 불투명도
 GLOW_ONLY            Glow Only          グローのみ         仅光晕         글로우만
+GPU_STATUS_NAME      GPU Acceleration   GPU アクセラレーション GPU 加速   GPU 가속
+GPU_STATUS_ACTIVE    GPU acceleration active  GPU アクセラレーション: 有効  GPU 加速：已启用  GPU 가속: 활성
+GPU_STATUS_READY     GPU acceleration ready   GPU アクセラレーション: 準備完了  GPU 加速：已就绪  GPU 가속: 준비 완료
+GPU_STATUS_UNAVAILABLE GPU acceleration unavailable  GPU アクセラレーション: 利用不可  GPU 加速：不可用  GPU 가속: 사용 불가
 ```
 
-popupの「Rec.709 / sRGB」「Display P3」「ACEScg」は規格名なので、全言語で同じ表記とする。翻訳は初版の案であり、各言語の利用者の確認で変更できる。変更しても保存データには影響しない。
+popupの「Rec.709 / sRGB」「Display P3」「ACEScg」は規格名なので、全言語で同じ表記とする。GPU_STATUS_NAME以外の状態文はDrawbotでUTF-8のまま描画するので、パラメータ名の31バイト制限を受けない。翻訳は初版の案であり、各言語の利用者の確認で変更できる。変更しても保存データには影響しない。
 
 ## 付録A　v0.5の変更点
 
@@ -899,6 +906,7 @@ popupの「Rec.709 / sRGB」「Display P3」「ACEScg」は規格名なので、
 - §12.5：Metalを試験対象へ加え、§12.5a（色管理とMFR）を新設した。
 - §14.3・§15・§16：Metalを加え、検証画像を配布物に含めないことを明記した。
 - §18（新設）：識別子、ライセンス、保存ID、アルゴリズム版、ローカライズを定めた。
+- 開発中の追記：§18.2にGPUステータス表示（ID 1）を加え、以降のIDを繰り下げた。
 - 初回実装時の追記：§6.1にホストのワールドがプリマルチプライ表現であること、§7.2に端数のある縦横比の二重ピラミッド混合、§7.3に半オクターブ基底Bin5、§7.4に局所FIRのσ=1.5 pxとE_EEFの重み10、§17.3に暫定校正（アルゴリズム版1）の条件と結果を加えた。
 
 ### A.2 情報の出どころと責任

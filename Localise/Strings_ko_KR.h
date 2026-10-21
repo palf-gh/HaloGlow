@@ -9,6 +9,14 @@ namespace AELocalise {
 namespace KO_KR {
 inline const char *GetString(LocKey::Key key) {
   switch (key) {
+  case LocKey::STR_GPU_STATUS_NAME:
+    return "GPU 가속";
+  case LocKey::STR_GPU_STATUS_ACTIVE:
+    return "GPU 가속: 활성";
+  case LocKey::STR_GPU_STATUS_READY:
+    return "GPU 가속: 준비 완료";
+  case LocKey::STR_GPU_STATUS_UNAVAILABLE:
+    return "GPU 가속: 사용 불가";
   case LocKey::STR_TOPIC_BASIC:
     return "기본";
   case LocKey::STR_INTENSITY:

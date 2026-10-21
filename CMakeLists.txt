@@ -115,6 +115,9 @@ set(HG_PLUGIN_SOURCES
 	Source/HaloGlow.cpp
 	Source/HaloGlow_UI.cpp
 	Source/HaloGlow_CPU.cpp
+	Source/HaloGlow_GpuStatusUI.cpp
+	Source/HG_GpuStatus.h
+	Source/HG_GpuStatus.cpp
 	Source/HG_ColourCache.h
 	Source/HG_ColourCache.cpp
 	Source/HG_Target.h
@@ -305,8 +308,11 @@ if(HG_CUDA_AVAILABLE)
 			$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/utf-8>
 			$<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:Debug>>:-Xcompiler=/MDd>
 			$<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<NOT:$<CONFIG:Debug>>>:-Xcompiler=/MD>)
-		target_link_options(HaloGlow PRIVATE /NODEFAULTLIB:LIBCMT)
+		target_link_options(HaloGlow PRIVATE /NODEFAULTLIB:LIBCMT "/DELAYLOAD:nvcuda.dll")
+		target_link_libraries(HaloGlow PRIVATE delayimp.lib)
 	endif()
+	# Driver API for the device name of the GPU status control.
+	target_link_libraries(HaloGlow PRIVATE CUDA::cuda_driver)
 	# No --use_fast_math and no FMA contraction on the reference path (§12.5).
 	target_compile_options(HaloGlow PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--fmad=false>)
 

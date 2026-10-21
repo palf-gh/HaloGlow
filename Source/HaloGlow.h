@@ -34,12 +34,14 @@
 #endif
 
 //-----------------------------------------------------------------------------
-// Parameter IDs (spec §18.2). Persisted by After Effects: never renumber or
-// reuse an ID; append new ones before HG_NUM_PARAMS. In version 1 the UI order
-// equals the ID order, so the param index equals the ID.
+// Parameter IDs (spec §18.2). Persisted by After Effects once released:
+// never renumber or reuse an ID after that; append new ones before
+// HG_NUM_PARAMS. In version 1 the UI order equals the ID order, so the param
+// index equals the ID.
 //-----------------------------------------------------------------------------
 enum HG_ParamId {
 	HG_INPUT = 0,
+	HG_GPU_STATUS,			// read-only custom UI: GPU acceleration status
 	HG_TOPIC_BASIC_START,
 	HG_INTENSITY,
 	HG_SIZE,
@@ -96,6 +98,10 @@ inline PF_LRect HG_ToLRect(const hg::Rect &r)
 PF_Err HG_ParamsSetup(PF_InData *in_data, PF_OutData *out_data);
 PF_Err HG_UpdateParamsUI(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *params[]);
 void HG_RefreshColourCache(PF_InData *in_data);
+
+// GPU status control (HaloGlow_GpuStatusUI.cpp)
+PF_Err HG_RegisterCustomUI(PF_InData *in_data);
+PF_Err HG_HandleEvent(PF_InData *in_data, PF_OutData *out_data, PF_EventExtra *extra);
 
 // CPU render (HaloGlow_CPU.cpp)
 PF_Err HG_SmartRenderCPU(PF_InData *in_data, PF_EffectWorld *input, PF_EffectWorld *output,
