@@ -1,0 +1,36 @@
+# Local design notes and test images (not redistributable).
+/research/
+
+# CMake out-of-source build trees.
+/build/
+/build*/
+/cmake-build-*/
+/out/
+compile_commands.json
+
+# Visual Studio / Xcode local state.
+/.vs/
+*.user
+*.suo
+*.VC.db
+xcuserdata/
+DerivedData/
+*.xcuserstate
+
+# Compiler intermediates and generated kernels.
+*.obj
+*.o
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.ptx
+*.cubin
+*.fatbin
+__pycache__/
+
+# Local plug-in outputs; release binaries ship via GitHub Releases.
+/dist/
+
+.DS_Store
+Thumbs.db
