@@ -128,6 +128,7 @@ struct Case {
 	std::string name;
 	hg::Settings s;
 	bool tile = false;	// input world smaller than the layer, output tile
+	bool clipLight = false;	// host input larger than the layer: light only inside (§8.3)
 };
 
 int RunCase(MetalDevice &dev, const Case &c, unsigned seed)
@@ -149,10 +150,11 @@ int RunCase(MetalDevice &dev, const Case &c, unsigned seed)
 		for (int ch = 0; ch < 3; ++ch) bgra[i * 4 + ch] *= bgra[i * 4 + 3];	// premultiplied world
 		if ((seed % 997u) == 0u) bgra[i * 4 + 2] = NAN;
 	}
-	const hg::Rect full = hg::MaxResultRect(c.s, hg::RenderScale {}, in);
+	const hg::Rect light = c.clipLight ? hg::Rect { in.x0 + 20, in.y0 + 15, in.x1 - 30, in.y1 - 25 } : in;
+	const hg::Rect full = hg::MaxResultRect(c.s, hg::RenderScale {}, light, in);
 	const hg::Rect out = c.tile ? hg::Intersect(full, hg::Rect { 40, 30, 151, 140 }) : full;
 	const int dstPitch = out.Width() + 3;
-	const hg::Plan plan = hg::BuildPlan(c.s, hg::RenderScale {}, in, out);
+	const hg::Plan plan = hg::BuildPlan(c.s, hg::RenderScale {}, light, out);
 	std::vector<float> upload(std::size_t(srcPitch) * world.Height() * 4, 0.0f);
 	for (int y = world.y0; y < world.y1; ++y)
 		for (int x = world.x0; x < world.x1; ++x)
@@ -260,6 +262,11 @@ int main()
 	add("tile, padded pitch", [](hg::Settings &s) { s.size = 9.0f; s.width = 130.0f; s.threshold = 5.0f; });
 	cases.back().tile = true;
 	add("tile, small radius", [](hg::Settings &s) { s.size = 2.5f; });
+	cases.back().tile = true;
+	add("light clipped to layer", [](hg::Settings &s) { s.size = 6.0f; s.threshold = 0.0f; });
+	cases.back().clipLight = true;
+	add("light clipped, tile", [](hg::Settings &s) { s.size = 2.0f; s.width = 300.0f; });
+	cases.back().clipLight = true;
 	cases.back().tile = true;
 		int failures = 0;
 		unsigned seed = 7u;

@@ -38,6 +38,10 @@ typedef struct HG_DownArgs {
 	int halveY;
 	int srcIsWorld;		// 1: src is the AE input world (extract on load)
 	int pad0;
+	int lightX0;		// light sources only inside [lightX0,lightX1) x [lightY0,lightY1)
+	int lightY0;
+	int lightX1;
+	int lightY1;
 	HG_PixelParams pixel;
 } HG_DownArgs;
 
@@ -72,6 +76,10 @@ typedef struct HG_FinalArgs {
 	float weight1;
 	float a0;
 	float pad1;
+	int lightX0;		// light-source rect (layer bounds, §8.3)
+	int lightY0;
+	int lightX1;
+	int lightY1;
 	HG_PixelParams pixel;
 	float localWeights[HG_LOCAL_SIZE * HG_LOCAL_SIZE];	// "local" is an OpenCL keyword
 } HG_FinalArgs;
@@ -161,10 +169,21 @@ HG_FN void hg_store_world(HG_GLOBAL HG_F4 *p, HG_Buf b, int x, int y, HG_RGBA v)
 		HG_MAKE_F4(hg_finite_clamp(v.b), hg_finite_clamp(v.g), hg_finite_clamp(v.r), v.a);
 }
 
+// Emission E: zero outside the light-source rect, so pixels the host supplies
+// beyond the layer (adjustment layers, expanded inputs) never emit (§8.3).
+HG_FN HG_RGBA hg_emission(HG_GLOBAL const HG_F4 *src, HG_Buf b, HG_PixelParams p, int lx0, int ly0, int lx1,
+						  int ly1, int x, int y)
+{
+	if (x < lx0 || y < ly0 || x >= lx1 || y >= ly1) {
+		return hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
+	}
+	return hg_extract(p, hg_load_world(src, b, x, y));
+}
+
 HG_FN HG_RGBA hg_down_tap(HG_GLOBAL const HG_F4 *src, HG_DownArgs a, int x, int y)
 {
 	if (a.srcIsWorld) {
-		return hg_extract(a.pixel, hg_load_world(src, a.src, x, y));
+		return hg_emission(src, a.src, a.pixel, a.lightX0, a.lightY0, a.lightX1, a.lightY1, x, y);
 	}
 	return hg_load(src, a.src, x, y);
 }
@@ -302,14 +321,14 @@ HG_FN void hg_final_body(HG_GLOBAL const HG_F4 *src, HG_GLOBAL HG_F4 *dst, HG_GL
 			for (int i = 0; i < HG_LOCAL_SIZE; ++i) {
 				const float w = a.localWeights[j * HG_LOCAL_SIZE + i];
 				if (w != 0.0f) {
-					hg_mad(&row, w, hg_extract(a.pixel, hg_load_world(src, a.src, x + i - HG_LOCAL_RADIUS,
-																	   y + j - HG_LOCAL_RADIUS)));
+					hg_mad(&row, w, hg_emission(src, a.src, a.pixel, a.lightX0, a.lightY0, a.lightX1, a.lightY1,
+												 x + i - HG_LOCAL_RADIUS, y + j - HG_LOCAL_RADIUS));
 				}
 			}
 			hg_mad(&b, 1.0f, row);
 		}
 	} else if (a.a0 > 0.0f) {
-		hg_mad(&b, a.a0, hg_extract(a.pixel, hg_load_world(src, a.src, x, y)));
+		hg_mad(&b, a.a0, hg_emission(src, a.src, a.pixel, a.lightX0, a.lightY0, a.lightX1, a.lightY1, x, y));
 	}
 	if (a.pyramidCount > 0) {
 		hg_mad(&b, a.weight0, hg_upsample(g0, a.g0, a.up0X, a.up0Y, x, y));

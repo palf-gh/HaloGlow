@@ -78,7 +78,7 @@ struct HG_GlobalData {
 struct HG_PreRenderData {
 	hg::Settings settings;
 	hg::RenderScale scale;
-	hg::Rect inputBounds;		// true input layer bounds (max_result_rect)
+	hg::Rect inputBounds;		// light-source rect: input bounds clipped to the layer (§8.3)
 	int algorithmVersion = hg::kAlgorithmVersion;
 };
 
