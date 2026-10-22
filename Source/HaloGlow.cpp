@@ -10,6 +10,7 @@
 #include "HaloGlow.h"
 #include "HG_ColourCache.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -170,9 +171,18 @@ PF_Err PreRender(PF_InData *in_data, PF_OutData *out_data, PF_PreRenderExtra *ex
 	data->scale.downsampleY = RationalToDouble(in_data->downsample_y);
 	data->scale.pixelAspect = RationalToDouble(in_data->pixel_aspect_ratio);
 
+	// Light sources are limited to the layer's own rectangle (§8.3): on an
+	// adjustment layer, or after an effect that expanded the buffer, pixels the
+	// host supplies outside it must not throw glow into the frame. Same layer
+	// size rule as the other Palf effects: full-resolution size times the
+	// downsample factor, rounded up.
+	const hg::Rect layerRect { 0, 0,
+		static_cast<int>(std::ceil(std::max(0.0, double(in_data->width) * data->scale.downsampleX))),
+		static_cast<int>(std::ceil(std::max(0.0, double(in_data->height) * data->scale.downsampleY))) };
+
 	PF_RenderRequest req = extra->input->output_request;
 	const hg::Rect requested = HG_FromLRect(req.rect);
-	req.rect = HG_ToLRect(hg::RequiredInputRect(data->settings, data->scale, requested));
+	req.rect = HG_ToLRect(hg::RequiredInputRect(data->settings, data->scale, requested, layerRect));
 	req.preserve_rgb_of_zero_alpha = FALSE;
 
 	PF_CheckoutResult in_result;
@@ -180,8 +190,9 @@ PF_Err PreRender(PF_InData *in_data, PF_OutData *out_data, PF_PreRenderExtra *ex
 	ERR(extra->cb->checkout_layer(in_data->effect_ref, HG_INPUT, HG_INPUT, &req, in_data->current_time,
 								  in_data->time_step, in_data->time_scale, &in_result));
 	if (!err) {
-		data->inputBounds = HG_FromLRect(in_result.max_result_rect);
-		const hg::Rect maxRect = hg::MaxResultRect(data->settings, data->scale, data->inputBounds);
+		const hg::Rect sourceBounds = HG_FromLRect(in_result.max_result_rect);
+		data->inputBounds = hg::Intersect(sourceBounds, layerRect);
+		const hg::Rect maxRect = hg::MaxResultRect(data->settings, data->scale, data->inputBounds, sourceBounds);
 		extra->output->max_result_rect = HG_ToLRect(maxRect);
 		extra->output->result_rect = HG_ToLRect(hg::Intersect(maxRect, requested));
 		extra->output->solid = FALSE;

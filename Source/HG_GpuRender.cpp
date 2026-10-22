@@ -87,6 +87,10 @@ Status Render(const Plan &plan, Backend &backend, const World &src, const World 
 	fa.pixel = plan.pixel;
 	fa.hasLocal = plan.hasLocalSpread ? 1 : 0;
 	fa.a0 = plan.coefficients.a[0];
+	fa.lightX0 = plan.inputRect.x0;
+	fa.lightY0 = plan.inputRect.y0;
+	fa.lightX1 = plan.inputRect.x1;
+	fa.lightY1 = plan.inputRect.y1;
 	std::memcpy(fa.localWeights, plan.localKernel, sizeof(fa.localWeights));
 	const void *g1[2] = { dummy, dummy };
 
@@ -112,6 +116,10 @@ Status Render(const Plan &plan, Backend &backend, const World &src, const World 
 				da.halveX = pyr.level[j].halveX ? 1 : 0;
 				da.halveY = pyr.level[j].halveY ? 1 : 0;
 				da.srcIsWorld = (j == 1) ? 1 : 0;
+				da.lightX0 = plan.inputRect.x0;
+				da.lightY0 = plan.inputRect.y0;
+				da.lightX1 = plan.inputRect.x1;
+				da.lightY1 = plan.inputRect.y1;
 				da.pixel = plan.pixel;
 				if (!backend.Down(j == 1 ? srcMem : lv[j - 1].d, lv[j].d, da)) return Status::LaunchFailed;
 			}

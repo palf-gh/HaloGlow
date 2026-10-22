@@ -369,26 +369,32 @@ Plan BuildPlanWithCoefficients(const Settings &settings, const RenderScale &scal
 	return BuildPlanImpl(settings, scale, inputRect, outputRect, &coefficients);
 }
 
-Rect MaxResultRect(const Settings &settings, const RenderScale &scale, const Rect &inputRect)
+Rect MaxResultRect(const Settings &settings, const RenderScale &scale, const Rect &lightRect,
+				   const Rect &sourceRect)
 {
-	const Plan plan = BuildPlan(settings, scale, inputRect, kHugeRect);
+	const Plan plan = BuildPlan(settings, scale, lightRect, kHugeRect);
 	const Settings s = Sanitise(settings);
 	Rect r {};
-	if (!s.glowOnly && s.sourceOpacity > 0.0f) r = inputRect;
-	if (plan.glowActive) r = Union(r, plan.glowRect);
-	if (r.Empty()) r = inputRect;
+	if (!s.glowOnly && s.sourceOpacity > 0.0f) r = sourceRect;
+	if (plan.glowActive && !lightRect.Empty()) r = Union(r, plan.glowRect);
+	if (r.Empty()) r = sourceRect;
 	return r;
+}
+
+Rect RequiredInputRect(const Settings &settings, const RenderScale &scale, const Rect &outputRect,
+					   const Rect &lightLimit)
+{
+	const Plan plan = BuildPlan(settings, scale, kHugeRect, outputRect);
+	if (!plan.glowActive) return outputRect;
+	Rect light = plan.hasLocalSpread ? Inflate(outputRect, kLocalRadius, kLocalRadius) : outputRect;
+	for (int p = 0; p < plan.pyramidCount; ++p)
+		light = Union(light, plan.pyramid[p].level[0].dDomain);
+	return Union(outputRect, Intersect(light, lightLimit));
 }
 
 Rect RequiredInputRect(const Settings &settings, const RenderScale &scale, const Rect &outputRect)
 {
-	const Plan plan = BuildPlan(settings, scale, kHugeRect, outputRect);
-	Rect r = outputRect;
-	if (!plan.glowActive) return r;
-	if (plan.hasLocalSpread) r = Inflate(r, kLocalRadius, kLocalRadius);
-	for (int p = 0; p < plan.pyramidCount; ++p)
-		r = Union(r, plan.pyramid[p].level[0].dDomain);
-	return r;
+	return RequiredInputRect(settings, scale, outputRect, kHugeRect);
 }
 
 //-----------------------------------------------------------------------------

@@ -196,6 +196,44 @@ void TestTiling()
 	}
 }
 
+// Light sources outside the layer rectangle never emit (§8.3): an adjustment
+// layer receives the composite below, which may extend past its own bounds.
+void TestLayerBoundsLightSource()
+{
+	hg::Settings s;
+	s.size = 12.0f;
+	s.threshold = 0.0f;
+	const hg::Rect layer { 0, 0, 64, 48 };
+	const hg::Rect input { -40, -30, 104, 78 };	// host input reaches beyond the layer
+	hg::Image src;
+	src.Reset(input);
+	src.Row(-20)[-30 - input.x0] = HG_RGBA { 50.f, 50.f, 50.f, 1.f };	// bright, outside the layer
+	src.Row(60)[90 - input.x0] = HG_RGBA { 50.f, 50.f, 50.f, 1.f };
+	const hg::Rect out = hg::MaxResultRect(s, hg::RenderScale {}, layer, input);
+	CHECK(out.x0 <= input.x0 && out.y0 <= input.y0 && out.x1 >= input.x1 && out.y1 >= input.y1,
+		  "source outside the layer must stay in the result rect");
+	hg::Image dst;
+	hg::RenderCPU(hg::BuildPlan(s, hg::RenderScale {}, layer, out), src, dst);
+	double leaked = 0.0;
+	for (int y = out.y0; y < out.y1; ++y)
+		for (int x = out.x0; x < out.x1; ++x) {
+			const HG_RGBA o = dst.At(x, y);
+			const HG_RGBA i = src.At(x, y);
+			leaked = std::max({ leaked, double(std::fabs(o.r - i.r)), double(std::fabs(o.a - i.a)) });
+		}
+	CHECK(leaked == 0.0, "glow from outside the layer leaked by %g", leaked);
+
+	// The same pixel inside the layer does glow.
+	src.Row(20)[30 - input.x0] = HG_RGBA { 50.f, 50.f, 50.f, 1.f };
+	hg::RenderCPU(hg::BuildPlan(s, hg::RenderScale {}, layer, out), src, dst);
+	CHECK(dst.At(36, 20).r > 0.0f, "inside-layer source must glow");
+
+	// Pre-render: light needs are clipped, the output itself is still requested.
+	const hg::Rect need = hg::RequiredInputRect(s, hg::RenderScale {}, hg::Rect { -40, -30, 0, 0 }, layer);
+	CHECK(need.x0 == -40 && need.y0 == -30, "output area must stay requested");
+	CHECK(need.x1 <= std::max(0, layer.x1) && need.y1 <= layer.y1, "light requests stay inside the layer");
+}
+
 void TestBypass()
 {
 	// Intensity 0 and Size 0 leave the source untouched at Source Opacity 100.
@@ -380,6 +418,7 @@ int main(int argc, char **argv)
 	TestDcGain();
 	TestTiling();
 	TestBypass();
+	TestLayerBoundsLightSource();
 	if (shape) {
 		TestShape();
 		TestContinuity();

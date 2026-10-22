@@ -146,7 +146,7 @@ struct Plan {
 	bool hasLocalSpread = false;	// any b_h > 0 (else W is a0 * delta)
 	int pyramidCount = 0;
 	PyramidPlan pyramid[2];
-	Rect inputRect;					// E support (true input bounds)
+	Rect inputRect;					// light-source rect: E is zero outside (§8.3)
 	Rect outputRect;				// requested output
 	Rect glowRect;					// where the glow may be non-zero at level 0
 	double radiusX = 0.0;			// R90 along x in processing px
@@ -164,10 +164,19 @@ Plan BuildPlanWithCoefficients(const Settings &settings, const RenderScale &scal
 							   const Coefficients &coefficients);
 
 // Pre-render helpers (§7.6, §9.1). Both walk the same tap graph as the render.
-// MaxResultRect: union of the source rect and every pixel the glow can touch.
+// Light sources are limited to lightRect (the layer's own rectangle, §8.3);
+// the source image may extend further (sourceRect) and is still composited.
+// MaxResultRect: union of the visible source and every pixel the glow can touch.
 Rect MaxResultRect(const Settings &settings, const RenderScale &scale,
-				   const Rect &inputRect);
-// RequiredInputRect: every input pixel that can affect outputRect.
+				   const Rect &lightRect, const Rect &sourceRect);
+inline Rect MaxResultRect(const Settings &settings, const RenderScale &scale, const Rect &inputRect)
+{
+	return MaxResultRect(settings, scale, inputRect, inputRect);
+}
+// RequiredInputRect: every input pixel that can affect outputRect, i.e. the
+// output itself (source composite) plus the light sources inside lightLimit.
+Rect RequiredInputRect(const Settings &settings, const RenderScale &scale,
+					   const Rect &outputRect, const Rect &lightLimit);
 Rect RequiredInputRect(const Settings &settings, const RenderScale &scale,
 					   const Rect &outputRect);
 
