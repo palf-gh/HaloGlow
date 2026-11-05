@@ -118,6 +118,7 @@ set(HG_PLUGIN_SOURCES
 	Source/HaloGlow_GpuStatusUI.cpp
 	Source/HG_GpuStatus.h
 	Source/HG_GpuStatus.cpp
+	Source/HG_UpdateNotice.cpp
 	Source/HG_ColourCache.h
 	Source/HG_ColourCache.cpp
 	Source/HG_Target.h
@@ -212,9 +213,11 @@ if(WIN32)
 		set(HG_PIPL_RC_${_cfg} "${_rc}")
 	endforeach()
 	list(APPEND HG_PLUGIN_SOURCES "$<IF:$<CONFIG:Debug>,${HG_PIPL_RC_Debug},${HG_PIPL_RC_Release}>")
+	list(APPEND HG_PLUGIN_SOURCES Source/HG_UpdateCheck.cpp)
 	add_library(HaloGlow SHARED ${HG_PLUGIN_SOURCES})
 	set_target_properties(HaloGlow PROPERTIES SUFFIX ".aex" OUTPUT_NAME "${HG_OUTPUT_NAME}")
 	target_compile_definitions(HaloGlow PRIVATE MSWindows _WINDOWS)
+	target_link_libraries(HaloGlow PRIVATE winhttp)
 elseif(APPLE)
 	find_program(REZ_TOOL Rez)
 	if(NOT REZ_TOOL)
@@ -246,6 +249,7 @@ elseif(APPLE)
 		set(HG_PIPL_RSRC_${_cfg} "${_rsrc}")
 	endforeach()
 	add_custom_target(HaloGlow_pipl DEPENDS "${HG_PIPL_RSRC_Debug}" "${HG_PIPL_RSRC_Release}")
+	list(APPEND HG_PLUGIN_SOURCES Source/HG_UpdateCheck_Mac.mm)
 	add_library(HaloGlow MODULE ${HG_PLUGIN_SOURCES})
 	add_dependencies(HaloGlow HaloGlow_pipl)
 	# CFBundleExecutable must name the binary of each configuration, or the
@@ -329,6 +333,9 @@ if(HG_METAL_AVAILABLE)
 	target_compile_definitions(HaloGlow PRIVATE HG_HAS_METAL=1)
 	target_link_libraries(HaloGlow PRIVATE ${METAL_LIBRARY} ${FOUNDATION_LIBRARY})
 	set_source_files_properties(Source/HG_Metal.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+endif()
+if(APPLE)
+	set_source_files_properties(Source/HG_UpdateCheck_Mac.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 endif()
 
 #------------------------------------------------------------------------------

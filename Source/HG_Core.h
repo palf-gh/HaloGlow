@@ -29,7 +29,8 @@ constexpr int kMaxLevels = 16;		// pyramid levels 1..kMaxLevels (level 0 = E)
 constexpr int kLocalRadius = 6;		// local FIR is (2r+1)^2 = 13x13 (§7.4)
 constexpr int kLocalSize = 2 * kLocalRadius + 1;
 constexpr int kLocalBasisCount = 4;	// sigma 0.5 / 0.75 / 1.0 / 1.5 px
-constexpr int kAlgorithmVersion = 1;	// provisional calibration, spec §17
+constexpr int kAlgorithmVersion = 2;	// current rendering behaviour, spec §18.2
+constexpr bool IsSupportedAlgorithmVersion(int version) { return version == 1 || version == 2; }
 
 //-----------------------------------------------------------------------------
 // Geometry helpers
@@ -67,6 +68,7 @@ enum class LuminanceSpace : int {
 };
 
 struct Settings {
+	int algorithmVersion = kAlgorithmVersion;	// persisted rendering behaviour
 	float intensity = 1.0f;			// 0..8
 	float size = 64.0f;				// 0..512 full-resolution square px
 	float threshold = 25.0f;		// 0..1600 %
@@ -144,6 +146,7 @@ struct Plan {
 	Coefficients coefficients;
 	float localKernel[kLocalSize * kLocalSize] = {};	// W = a0 d + sum b_h H_h
 	bool hasLocalSpread = false;	// any b_h > 0 (else W is a0 * delta)
+	float falloff = 50.0f;			// UI Falloff, version-2 octave ratio (§8.1)
 	int pyramidCount = 0;
 	PyramidPlan pyramid[2];
 	Rect inputRect;					// light-source rect: E is zero outside (§8.3)

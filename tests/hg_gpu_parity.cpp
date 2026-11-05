@@ -204,6 +204,7 @@ std::unique_ptr<TestDevice> MakeOpenCL()
 struct Case {
 	std::string name;
 	hg::Settings s;
+	hg::RenderScale scale;
 	bool tile = false;	// input world smaller than the layer, output tile
 	bool clipLight = false;	// host input larger than the layer: light only inside (§8.3)
 };
@@ -229,10 +230,10 @@ int RunCase(TestDevice &dev, const Case &c, unsigned seed)
 		if ((seed % 997u) == 0u) bgra[i * 4 + 2] = NAN;
 	}
 	const hg::Rect light = c.clipLight ? hg::Rect { in.x0 + 20, in.y0 + 15, in.x1 - 30, in.y1 - 25 } : in;
-	const hg::Rect full = hg::MaxResultRect(c.s, hg::RenderScale {}, light, in);
+	const hg::Rect full = hg::MaxResultRect(c.s, c.scale, light, in);
 	const hg::Rect out = c.tile ? hg::Intersect(full, hg::Rect { 40, 30, 151, 140 }) : full;
 	const int dstPitch = out.Width() + 3;
-	const hg::Plan plan = hg::BuildPlan(c.s, hg::RenderScale {}, light, out);
+	const hg::Plan plan = hg::BuildPlan(c.s, c.scale, light, out);
 	std::vector<float> upload(std::size_t(srcPitch) * world.Height() * 4, 0.0f);
 	for (int y = world.y0; y < world.y1; ++y)
 		for (int x = world.x0; x < world.x1; ++x)
@@ -327,6 +328,13 @@ int main()
 		cases.push_back(c);
 	};
 	add("default", [](hg::Settings &) {});
+	add("legacy version 1", [](hg::Settings &s) { s.algorithmVersion = 1; });
+	add("half resolution and non-square pixels", [](hg::Settings &s) { s.size = 8.0f; });
+	cases.back().scale.downsampleX = 0.5; cases.back().scale.downsampleY = 0.5;
+	cases.back().scale.pixelAspect = 0.5; cases.back().tile = true;
+	add("legacy tone and fade", [](hg::Settings &s) {
+		s.algorithmVersion = 1; s.gamma = 0.4f; s.sourceOpacity = 30.0f; s.colourStrength = 60.0f;
+	});
 	add("small radius local FIR", [](hg::Settings &s) { s.size = 3.0f; });
 	add("subpixel fade", [](hg::Settings &s) { s.size = 0.4f; });
 	add("anisotropic 400/25", [](hg::Settings &s) { s.size = 12.0f; s.width = 400.0f; s.height = 25.0f; });

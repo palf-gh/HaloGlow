@@ -98,6 +98,8 @@ inline PF_LRect HG_ToLRect(const hg::Rect &r)
 PF_Err HG_ParamsSetup(PF_InData *in_data, PF_OutData *out_data);
 PF_Err HG_UpdateParamsUI(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *params[]);
 void HG_RefreshColourCache(PF_InData *in_data);
+void HG_DeclareUTF8Text();
+void HG_ApplyUpdateLineHeight(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *gpuParam);
 
 // GPU status control (HaloGlow_GpuStatusUI.cpp)
 PF_Err HG_RegisterCustomUI(PF_InData *in_data);

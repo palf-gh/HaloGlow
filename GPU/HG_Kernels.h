@@ -56,7 +56,11 @@ typedef struct HG_AccumArgs {
 	int hasCoarse;
 	int upX;
 	int upY;
-	int pad0;
+	int screenScales;	// 1: version 2 screens this octave onto the coarser one
+	float scaleGain;
+	int pad1;
+	int pad2;
+	HG_PixelParams pixel;
 } HG_AccumArgs;
 
 typedef struct HG_FinalArgs {
@@ -71,11 +75,12 @@ typedef struct HG_FinalArgs {
 	int up1X;
 	int up1Y;
 	int hasLocal;
-	int pad0;
+	int screenScales;	// 1: version 2 screens the local octave onto the pyramid
 	float weight0;
 	float weight1;
 	float a0;
-	float pad1;
+	float localNorm;	// 1 / sum(localWeights), or 0 when the kernel is empty
+	float localScaleGain;
 	int lightX0;		// light-source rect (layer bounds, §8.3)
 	int lightY0;
 	int lightX1;
@@ -269,24 +274,44 @@ HG_FN void hg_accum_body(HG_GLOBAL const HG_F4 *d, HG_GLOBAL const HG_F4 *coarse
 	const int y = a.dst.y0 + ly;
 	const float bin5[5] = { 1.0f / 16.0f, 4.0f / 16.0f, 6.0f / 16.0f, 4.0f / 16.0f, 1.0f / 16.0f };
 	HG_RGBA acc = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
-	if (a.a > 0.0f) {
-		hg_mad(&acc, a.a, hg_load(d, a.d, x, y));
-	}
-	if (a.c > 0.0f) {
-		const int rx = a.blurX ? 2 : 0;
-		const int ry = a.blurY ? 2 : 0;
-		HG_RGBA blur = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
-		for (int j = -ry; j <= ry; ++j) {
-			HG_RGBA row = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
-			for (int i = -rx; i <= rx; ++i) {
-				hg_mad(&row, a.blurX ? bin5[i + 2] : 1.0f, hg_load(d, a.d, x + i, y + j));
+	if (a.screenScales) {
+		HG_RGBA low = hg_load(d, a.d, x, y);
+		if (a.blurX || a.blurY) {
+			const int rx = a.blurX ? 2 : 0;
+			const int ry = a.blurY ? 2 : 0;
+			low = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
+			for (int j = -ry; j <= ry; ++j) {
+				HG_RGBA row = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
+				for (int i = -rx; i <= rx; ++i) {
+					hg_mad(&row, a.blurX ? bin5[i + 2] : 1.0f, hg_load(d, a.d, x + i, y + j));
+				}
+				hg_mad(&low, a.blurY ? bin5[j + 2] : 1.0f, row);
 			}
-			hg_mad(&blur, a.blurY ? bin5[j + 2] : 1.0f, row);
 		}
-		hg_mad(&acc, a.c, blur);
-	}
-	if (a.hasCoarse) {
-		hg_mad(&acc, 1.0f, hg_upsample(coarse, a.coarse, a.upX, a.upY, x, y));
+		const HG_RGBA fine = hg_tone_scale(a.pixel, low, a.scaleGain);
+		HG_RGBA up = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
+		if (a.hasCoarse) up = hg_upsample(coarse, a.coarse, a.upX, a.upY, x, y);
+		acc = hg_screen_rgba(up, fine);
+	} else {
+		if (a.a > 0.0f) {
+			hg_mad(&acc, a.a, hg_load(d, a.d, x, y));
+		}
+		if (a.c > 0.0f) {
+			const int rx = a.blurX ? 2 : 0;
+			const int ry = a.blurY ? 2 : 0;
+			HG_RGBA blur = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
+			for (int j = -ry; j <= ry; ++j) {
+				HG_RGBA row = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
+				for (int i = -rx; i <= rx; ++i) {
+					hg_mad(&row, a.blurX ? bin5[i + 2] : 1.0f, hg_load(d, a.d, x + i, y + j));
+				}
+				hg_mad(&blur, a.blurY ? bin5[j + 2] : 1.0f, row);
+			}
+			hg_mad(&acc, a.c, blur);
+		}
+		if (a.hasCoarse) {
+			hg_mad(&acc, 1.0f, hg_upsample(coarse, a.coarse, a.upX, a.upY, x, y));
+		}
 	}
 	hg_store(dst, a.dst, x, y, acc);
 }
@@ -314,7 +339,7 @@ HG_FN void hg_final_body(HG_GLOBAL const HG_F4 *src, HG_GLOBAL HG_F4 *dst, HG_GL
 		return;
 	}
 
-	HG_RGBA b = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
+	HG_RGBA local = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
 	if (a.hasLocal) {
 		for (int j = 0; j < HG_LOCAL_SIZE; ++j) {
 			HG_RGBA row = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
@@ -325,16 +350,28 @@ HG_FN void hg_final_body(HG_GLOBAL const HG_F4 *src, HG_GLOBAL HG_F4 *dst, HG_GL
 												 x + i - HG_LOCAL_RADIUS, y + j - HG_LOCAL_RADIUS));
 				}
 			}
-			hg_mad(&b, 1.0f, row);
+			hg_mad(&local, 1.0f, row);
 		}
 	} else if (a.a0 > 0.0f) {
-		hg_mad(&b, a.a0, hg_emission(src, a.src, a.pixel, a.lightX0, a.lightY0, a.lightX1, a.lightY1, x, y));
+		hg_mad(&local, a.a0, hg_emission(src, a.src, a.pixel, a.lightX0, a.lightY0, a.lightX1, a.lightY1, x, y));
 	}
+	HG_RGBA wide = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
 	if (a.pyramidCount > 0) {
-		hg_mad(&b, a.weight0, hg_upsample(g0, a.g0, a.up0X, a.up0Y, x, y));
+		hg_mad(&wide, a.weight0, hg_upsample(g0, a.g0, a.up0X, a.up0Y, x, y));
 	}
 	if (a.pyramidCount > 1) {
-		hg_mad(&b, a.weight1, hg_upsample(g1, a.g1, a.up1X, a.up1Y, x, y));
+		hg_mad(&wide, a.weight1, hg_upsample(g1, a.g1, a.up1X, a.up1Y, x, y));
+	}
+	HG_RGBA b;
+	if (a.screenScales) {
+		local.r *= a.localNorm;
+		local.g *= a.localNorm;
+		local.b *= a.localNorm;
+		local.a *= a.localNorm;
+		b = hg_screen_rgba(wide, hg_tone_scale(a.pixel, local, a.localScaleGain));
+	} else {
+		b = local;
+		hg_mad(&b, 1.0f, wide);
 	}
 	const HG_RGBA glow = hg_glow_from_filtered(a.pixel, b);
 	const HG_RGBA out = hg_composite(a.pixel, hg_load_world(src, a.src, x, y), glow);

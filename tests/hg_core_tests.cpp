@@ -6,6 +6,7 @@
 */
 
 #include "HG_Core.h"
+#include "HG_UpdateCheck.h"
 
 #include <algorithm>
 #include <cmath>
@@ -34,6 +35,7 @@ int g_checks = 0;
 HG_PixelParams PixelParams(float thresholdPct, float softnessPct)
 {
 	hg::Settings s;
+	s.algorithmVersion = 1; // Existing extraction checks specify the legacy luminance model.
 	s.threshold = thresholdPct;
 	s.softness = softnessPct;
 	const hg::Plan plan = hg::BuildPlan(s, hg::RenderScale {}, hg::Rect { 0, 0, 1, 1 }, hg::Rect { 0, 0, 1, 1 });
@@ -97,6 +99,27 @@ void TestExtraction()
 	// Non-finite input is zeroed.
 	e = hg_extract(soft, HG_RGBA { NAN, INFINITY, 1.f, 1.f });
 	CHECK(std::isfinite(e.r) && std::isfinite(e.g) && std::isfinite(e.a), "non-finite");
+
+	// Version 2 also picks up saturated light whose overall luminance is below
+	// the knee, without inventing red or green light in a blue source.
+	HG_PixelParams v2 = soft;
+	v2.algorithmVersion = 2;
+	const HG_RGBA blue { 0.f, 0.f, 0.4f, 1.f };
+	const HG_RGBA oldBlue = hg_extract(soft, blue);
+	const HG_RGBA newBlue = hg_extract(v2, blue);
+	CHECK(oldBlue.b == 0.0f && newBlue.b > 0.0f && newBlue.r == 0.0f && newBlue.g == 0.0f,
+		"v2 detects saturated blue while v1 remains luminance-only");
+	const HG_RGBA half = hg_extract(v2, HG_RGBA {0.f, 0.f, 0.2f, 0.5f});
+	CHECK(std::fabs(half.b - 0.5f * newBlue.b) < 1e-6f &&
+		std::fabs(half.a - 0.5f * newBlue.a) < 1e-6f, "premultiplied alpha scaling");
+	float previousBlue = 0.0f;
+	for (int i = 0; i <= 400; ++i) {
+		const float value = i * 0.005f;
+		const HG_RGBA light = hg_extract(v2, HG_RGBA {0.f, 0.f, value, 1.f});
+		CHECK(std::isfinite(light.b) && light.b >= previousBlue && light.b <= value,
+			"v2 channel extraction monotonic at %g", value);
+		previousBlue = light.b;
+	}
 }
 
 void TestTone()
@@ -124,6 +147,75 @@ void TestTone()
 }
 
 //-----------------------------------------------------------------------------
+void TestVersionedComposite()
+{
+	CHECK(hg::IsSupportedAlgorithmVersion(1) && hg::IsSupportedAlgorithmVersion(2), "known versions");
+	CHECK(!hg::IsSupportedAlgorithmVersion(0) && !hg::IsSupportedAlgorithmVersion(3), "unknown versions");
+	hg::Settings settings;
+	settings.algorithmVersion = 1;
+	const hg::Rect rect { 0, 0, 1, 1 };
+	HG_PixelParams p = hg::BuildPlan(settings, hg::RenderScale {}, rect, rect).pixel;
+	CHECK(p.algorithmVersion == 1, "saved version propagated");
+	const HG_RGBA src { 0.8f, 0.4f, 0.2f, 0.5f };
+	const HG_RGBA glow { 0.3f, 0.2f, 0.1f, 0.4f };
+	const HG_RGBA old = hg_composite(p, src, glow);
+	CHECK(old.r == src.r + glow.r && old.g == src.g + glow.g && old.b == src.b + glow.b,
+		"version 1 preserves additive RGB");
+	CHECK(old.a == src.a + (1.0f - src.a) * glow.a, "version 1 alpha union");
+	settings.algorithmVersion = 2;
+	p = hg::BuildPlan(settings, hg::RenderScale {}, rect, rect).pixel;
+	CHECK(p.algorithmVersion == 2, "current version propagated");
+	CHECK(std::fabs(hg_octave_tail(50.0f) - 0.12f) < 1e-6f, "default coarse-octave tail");
+	CHECK(std::fabs(hg_scale_gain(0, 6, 50.0f) - 8.0f) < 1e-4f, "finest scale gain");
+	CHECK(std::fabs(hg_scale_gain(6, 6, 50.0f) - 8.0f * 0.12f) < 1e-4f, "widest octave keeps a tail");
+	CHECK(hg_scale_gain(6, 6, 0.0f) < hg_scale_gain(6, 6, 100.0f), "falloff lengthens the coarse octaves");
+	CHECK(std::fabs(hg_scale_shoulder(8.0f, 0.0f)) < 1e-6f, "shoulder leaves black alone");
+	CHECK(std::fabs(hg_scale_shoulder(8.0f, 1.0f) - 1.0f) < 1e-5f, "a full low-pass stays at one");
+	CHECK(std::fabs(hg_scale_shoulder(8.0f, 0.01f) - (0.08f / 1.07f)) < 1e-5f,
+		"a faint wing keeps nearly the full scale gain");
+	CHECK(std::fabs(hg_screen(0.2f, 0.2f) - 0.36f) < 1e-6f, "screen compresses overlapping light");
+	const HG_RGBA current = hg_composite(p, src, glow);
+	CHECK(current.r < old.r && current.r > src.r, "highlight roll-off");
+	CHECK(current.a == old.a, "alpha union unchanged");
+	const HG_RGBA zero = hg_composite(p, src, HG_RGBA { 0, 0, 0, 0 });
+	CHECK(zero.r == src.r && zero.g == src.g && zero.b == src.b && zero.a == src.a,
+		"zero glow preserves source");
+	const HG_RGBA translucent = hg_composite(p, HG_RGBA {0.5f,0.2f,0.1f,0.5f},
+		HG_RGBA {0.5f,0.1f,0.05f,0.5f});
+	CHECK(translucent.r <= translucent.a + 1e-6f, "SDR composite remains premultiplied");
+	const HG_RGBA hdrSource {4.0f, 1.0f, 0.5f, 0.25f};
+	const HG_RGBA hdrZero = hg_composite(p, hdrSource, HG_RGBA {0,0,0,0});
+	CHECK(hdrZero.r == hdrSource.r && hdrZero.a == hdrSource.a, "zero glow preserves HDR source alpha");
+	float previous = -100.0f;
+	for (int i = 0; i <= 400; ++i) {
+		const float v = static_cast<float>(i) * 0.025f;
+		const float out = hg_composite(p, HG_RGBA {v,v,v,1}, HG_RGBA {2,2,2,1}).r;
+		CHECK(out >= previous, "monotone in HDR source at %g", v);
+		previous = out;
+	}
+	previous = -100.0f;
+	for (int i = 0; i <= 400; ++i) {
+		const float v = static_cast<float>(i) * 0.025f;
+		const float out = hg_composite(p, HG_RGBA {0.8f,0.8f,0.8f,1}, HG_RGBA {v,v,v,1}).r;
+		CHECK(out >= previous, "monotone in HDR glow at %g", v);
+		previous = out;
+	}
+	p.glowOnly = 1;
+	const HG_RGBA only = hg_composite(p, src, glow);
+	CHECK(only.r == glow.r && only.g == glow.g && only.b == glow.b && only.a == glow.a,
+		"glow-only output unchanged by compositing");
+	for (float alpha : { 1e-4f, 0.01f, 0.5f }) {
+		const HG_RGBA light = hg_glow_from_filtered(p, HG_RGBA { alpha, alpha, alpha, alpha });
+		CHECK(std::isfinite(light.r) && std::isfinite(light.a) && light.a >= 0.0f && light.a <= 1.0f,
+			"finite transparent glow at alpha %g", alpha);
+		CHECK(light.r <= light.a + 1e-6f || light.r > 1.0f, "SDR light is premultiplied at alpha %g", alpha);
+		if (light.r <= 1.0f) {
+			const float overWhite = light.r + (1.0f - light.a);
+			CHECK(overWhite <= 1.0f + 1e-6f, "SDR light over white at alpha %g", alpha);
+		}
+	}
+}
+
 hg::Image ConstantImage(const hg::Rect &r, HG_RGBA v)
 {
 	hg::Image img;
@@ -138,6 +230,7 @@ void TestDcGain()
 	const float sizes[] = { 0.7f, 4.0f, 16.0f, 40.0f };
 	for (float size : sizes) {
 		hg::Settings s;
+		s.algorithmVersion = 1; // Version 2 screens octaves, so a flat field is not a unit gain.
 		s.size = size;
 		const hg::Rect in { -300, -300, 300, 300 };
 		const hg::Rect out { -4, -4, 4, 4 };
@@ -280,6 +373,7 @@ struct ShapeResult {
 ShapeResult MeasureShape(float size, int imageHalf)
 {
 	hg::Settings s;
+	s.algorithmVersion = 1; // Energy and R90 belong to the version-1 normalised PSF.
 	s.size = size;
 	s.threshold = 0.0f;
 	const hg::Rect frame { -imageHalf, -imageHalf, imageHalf, imageHalf };
@@ -350,6 +444,7 @@ void TestContinuity()
 	// crosses octave boundaries (§12.4). Far from edges energy stays ~1.
 	auto energy = [](float size, float width) {
 		hg::Settings s;
+		s.algorithmVersion = 1;
 		s.size = size;
 		s.width = width;
 		s.threshold = 0.0f;
@@ -382,6 +477,7 @@ void TestThinAxis()
 {
 	// Height 25 % must not spread more along y than the 1-D limit allows.
 	hg::Settings s;
+	s.algorithmVersion = 1;
 	s.size = 16.0f;
 	s.width = 400.0f;
 	s.height = 25.0f;
@@ -407,6 +503,105 @@ void TestThinAxis()
 	CHECK(ratio < 2.0 * (25.0 / 400.0), "thin axis fattened: %g", ratio);
 }
 
+float EncodedLuma(float x)
+{
+	if (!(x > 0.0f)) return 0.0f;
+	if (x <= 0.0031308f) return 12.92f * x;
+	return 1.055f * std::pow(x, 1.0f / 2.4f) - 0.055f;
+}
+
+void TestScaleFalloff()
+{
+	// A flat emission is a low-pass of one at every octave. The shoulder keeps
+	// that field from stacking above one, so a large highlight gains no rim.
+	{
+		hg::Settings s;
+		s.threshold = 0.0f;
+		const hg::Rect in { -80, -80, 80, 80 };
+		const hg::Rect out { -8, -8, 8, 8 };
+		const hg::Plan plan = hg::BuildPlan(s, hg::RenderScale {}, in, out);
+		const hg::Image e = ConstantImage(in, HG_RGBA { 1.f, 1.f, 1.f, 1.f });
+		hg::Image b;
+		hg::FilterEmission(plan, e, b);
+		for (const HG_RGBA &px : b.pixels)
+			CHECK(px.r <= 1.02f && px.r >= 0.0f && std::isfinite(px.r), "flat scale %g", px.r);
+	}
+
+	// A small lamp falls smoothly. The photographed point crosses 0.02 at about
+	// 2.8 times the radius where it crosses 0.2; a hard second kernel does not.
+	hg::Settings s;
+	s.glowOnly = true;
+	s.threshold = 0.0f;
+	s.size = 48.0f;
+	const int half = 96;
+	const hg::Rect frame { -half, -half, half, half };
+	hg::Image src;
+	src.Reset(frame);
+	for (int y = -2; y <= 2; ++y) {
+		for (int x = -2; x <= 2; ++x) {
+			const std::size_t i = std::size_t(y + half) * frame.Width() + (x + half);
+			src.pixels[i] = HG_RGBA { 1.f, 1.f, 1.f, 1.f };
+		}
+	}
+	const hg::Plan plan = hg::BuildPlan(s, hg::RenderScale {}, frame, frame);
+	hg::Image out;
+	hg::RenderCPU(plan, src, out);
+	std::vector<double> sum(half + 1, 0.0), count(half + 1, 0.0);
+	for (int y = frame.y0; y < frame.y1; ++y) {
+		for (int x = frame.x0; x < frame.x1; ++x) {
+			const int r = std::min(half, static_cast<int>(std::lround(std::sqrt(double(x * x + y * y)))));
+			sum[r] += EncodedLuma(out.At(x, y).r);
+			count[r] += 1.0;
+		}
+	}
+	double previous = 2.0;
+	double r20 = -1.0, r02 = -1.0;
+	for (int r = 3; r <= half; ++r) {
+		if (!(count[r] > 0.0)) continue;
+		const double y = sum[r] / count[r];
+		CHECK(y <= previous + 0.004, "radial ridge at %d (%g -> %g)", r, previous, y);
+		previous = y;
+		if (r20 < 0.0 && y < 0.2) r20 = r;
+		if (r02 < 0.0 && y < 0.02) r02 = r;
+	}
+	const double ratio = (r20 > 0.0 && r02 > 0.0) ? r02 / r20 : 0.0;
+	std::printf("  scale falloff: r0.2=%.0f r0.02=%.0f ratio=%.3f\n", r20, r02, ratio);
+	CHECK(ratio > 2.0 && ratio < 3.6, "encoded shoulder ratio %g", ratio);
+}
+
+void TestReleaseTag()
+{
+	const hg::ReleaseVersion plain = hg::ParseReleaseTag("1.2.3", 5);
+	const hg::ReleaseVersion prefixed = hg::ParseReleaseTag("v0.2.0", 6);
+	CHECK(plain.ok && plain.major == 1 && plain.minor == 2 && plain.bug == 3, "plain tag");
+	CHECK(prefixed.ok && prefixed.major == 0 && prefixed.minor == 2 && prefixed.bug == 0, "v prefix");
+	CHECK(!hg::ParseReleaseTag("v1.2", 4).ok, "short tag");
+	CHECK(!hg::ParseReleaseTag("v1.2.3-beta", 10).ok, "prerelease tag");
+	CHECK(!hg::ParseReleaseTag("01.2.3", 6).ok, "leading zero");
+	CHECK(hg::CompareRelease(prefixed, plain) < 0, "0.2.0 is older than 1.2.3");
+
+	hg::ReleaseVersion local;
+	local.major = 0;
+	local.minor = 1;
+	local.bug = 0;
+	local.ok = true;
+	const char *body =
+		"{\"html_url\":\"https://github.com/palf-gh\",\"tag_name\":\"v0.2.0\","
+		"\"html_url\":\"https:\\/\\/github.com\\/palf-gh\\/HaloGlow\\/releases\\/tag\\/v0.2.0\"}";
+	const hg::ReleaseInfo newer = hg::InterpretReleaseBody(200, body, std::char_traits<char>::length(body), local);
+	CHECK(newer.status == hg::ReleaseInfo::Status::Available, "newer release");
+	CHECK(newer.remote.minor == 2, "remote minor");
+	CHECK(hg::IsHaloGlowReleasePage(newer.page), "release page");
+
+	const hg::ReleaseInfo missing = hg::InterpretReleaseBody(404, "", 0, local);
+	CHECK(missing.status == hg::ReleaseInfo::Status::NoRelease, "no release");
+	const char sameBody[] =
+		"{\"tag_name\":\"v0.1.0\",\"html_url\":\"https://github.com/palf-gh/HaloGlow/releases/tag/v0.1.0\"}";
+	const hg::ReleaseInfo same =
+		hg::InterpretReleaseBody(200, sameBody, sizeof(sameBody) - 1, local);
+	CHECK(same.status == hg::ReleaseInfo::Status::Current, "same version");
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -415,6 +610,9 @@ int main(int argc, char **argv)
 	TestLuminance();
 	TestExtraction();
 	TestTone();
+	TestVersionedComposite();
+	TestScaleFalloff();
+	TestReleaseTag();
 	TestDcGain();
 	TestTiling();
 	TestBypass();

@@ -12,6 +12,7 @@
 
 #include "HaloGlow.h"
 #include "HG_GpuStatus.h"
+#include "HG_UpdateCheck.h"
 
 #include "AE_EffectUI.h"
 #include "AE_EffectSuites.h"
@@ -24,6 +25,7 @@
 #include "Localise/AELocalise.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -65,6 +67,21 @@ void DrawLine(const DRAWBOT_Suites &s, DRAWBOT_SurfaceRef surface, DRAWBOT_Brush
 	DRAWBOT_PointF32 origin { x, baseline };
 	s.surface_suiteP->DrawString(surface, brush, font, utf16.data(), &origin, kDRAWBOT_TextAlignment_Left,
 								 kDRAWBOT_TextTruncation_EndEllipsis, width);
+}
+
+void RequestUpdateLine(PF_InData *in_data, PF_OutData *out_data)
+{
+	static thread_local bool busy = false;
+	if (busy || !in_data || !out_data) return;
+	busy = true;
+	PF_ParamDef def;
+	AEFX_CLR_STRUCT(def);
+	if (PF_CHECKOUT_PARAM(in_data, HG_GPU_STATUS, in_data->current_time, in_data->time_step, in_data->time_scale,
+						  &def) == PF_Err_NONE) {
+		HG_ApplyUpdateLineHeight(in_data, out_data, &def);
+		PF_CHECKIN_PARAM(in_data, &def);
+	}
+	busy = false;
 }
 
 void DrawStatus(PF_InData *in_data, PF_OutData *out_data, PF_EventExtra *extra)
@@ -118,6 +135,32 @@ void DrawStatus(PF_InData *in_data, PF_OutData *out_data, PF_EventExtra *extra)
 			const float top = static_cast<float>(frame.top);
 			DrawLine(suites, surface, brush, font, line, x, top + fontSize + 2.0f, width);
 			if (active) DrawLine(suites, surface, brush, font, detail, x, top + fontSize * 2.0f + 5.0f, width);
+
+			int remoteMajor = 0, remoteMinor = 0, remoteBug = 0;
+			if (hg::UpdateVersion(remoteMajor, remoteMinor, remoteBug)) {
+				const int frameHeight = frame.bottom - frame.top;
+				const int expanded = HG_kGpuStatusHeight + HG_kUpdateLineHeight;
+				if (frameHeight + 1 < expanded) {
+					RequestUpdateLine(in_data, out_data);
+				} else {
+					char notice[160];
+					std::snprintf(notice, sizeof(notice),
+								  AELocalise::GetStringUTF8(LocKey::STR_UPDATE_AVAILABLE, in_data), remoteMajor,
+								  remoteMinor, remoteBug);
+					DRAWBOT_ColorRGBA noticeColour {};
+					noticeColour.red = 0.93f;
+					noticeColour.green = 0.76f;
+					noticeColour.blue = 0.32f;
+					noticeColour.alpha = 1.0f;
+					DRAWBOT_BrushRef noticeBrush = nullptr;
+					suites.supplier_suiteP->NewBrush(supplier, &noticeColour, &noticeBrush);
+					if (noticeBrush) {
+						DrawLine(suites, surface, noticeBrush, font, notice, x,
+								 top + static_cast<float>(HG_kGpuStatusHeight) + fontSize - 4.0f, width);
+						suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(noticeBrush));
+					}
+				}
+			}
 		}
 		if (brush) suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(brush));
 		if (font) suites.supplier_suiteP->ReleaseObject(reinterpret_cast<DRAWBOT_ObjectRef>(font));
@@ -147,4 +190,19 @@ PF_Err HG_HandleEvent(PF_InData *in_data, PF_OutData *out_data, PF_EventExtra *e
 		extra->evt_out_flags |= PF_EO_HANDLED_EVENT;
 	}
 	return PF_Err_NONE;
+}
+
+void HG_ApplyUpdateLineHeight(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *gpuParam)
+{
+	if (!in_data || !out_data || !gpuParam) return;
+	int major = 0;
+	int minor = 0;
+	int bug = 0;
+	if (!hg::UpdateVersion(major, minor, bug)) return;
+	const A_long want = HG_kGpuStatusHeight + HG_kUpdateLineHeight;
+	if (gpuParam->ui_height >= want) return;
+	gpuParam->ui_height = want;
+	PF_ParamDef def = *gpuParam;
+	AEFX_SuiteScoper<PF_ParamUtilsSuite3> paramUtils(in_data, kPFParamUtilsSuite, kPFParamUtilsSuiteVersion3, out_data);
+	paramUtils->PF_UpdateParamUI(in_data->effect_ref, HG_GPU_STATUS, &def);
 }

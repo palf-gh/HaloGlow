@@ -20,7 +20,7 @@
 	#define MATCHNAME		"PALF HaloGlow"
 #endif
 
-#define DESCRIPTION		"\nGlow with a calibrated core, diffusion and long halo.\rMIT licence."
+#define DESCRIPTION		"\nScreen glow built one octave at a time.\rMIT licence."
 #define CATEGORY		"Stylize"
 #define SUPPORT_URL		"https://x.com/PALF_MovieWorks"
 
@@ -37,15 +37,15 @@
 //-----------------------------------------------------------------------------
 // Version (PF_Stage: DEVELOP=0, ALPHA=1, BETA=2, RELEASE=3)
 //-----------------------------------------------------------------------------
-#define	MAJOR_VERSION	0
-#define	MINOR_VERSION	1
+#define	MAJOR_VERSION	1
+#define	MINOR_VERSION	0
 #define	BUG_VERSION		0
-#define	STAGE_VERSION	0
+#define	STAGE_VERSION	3		// PF_Stage_RELEASE
 #define	BUILD_VERSION	1
 
-// PF_VERSION(0,1,0,0,1) = (0<<19)|(1<<15)|(0<<11)|(0<<9)|1 = 32769.
+// PF_VERSION(1,0,0,3,1) = (1<<19)|(0<<15)|(0<<11)|(3<<9)|1 = 525825.
 // PiPLtool rejects shifts, so the packed value is a literal.
-#define	HG_VERSION_PACKED	32769
+#define	HG_VERSION_PACKED	525825
 
 //-----------------------------------------------------------------------------
 // Global out-flags. Literals only, identical in the PiPL and GlobalSetup, or
@@ -63,15 +63,20 @@
 //   | PF_OutFlag2_FLOAT_COLOR_AWARE (1<<12 = 4096)
 //   | PF_OutFlag2_I_MIX_GUID_DEPENDENCIES (1<<21 = 2097152)
 //   | PF_OutFlag2_SUPPORTS_THREADED_RENDERING (1<<27 = 134217728)
-//   = 136320000; with PF_OutFlag2_SUPPORTS_GPU_RENDER_F32 (1<<25) = 169874432.
+//   | PF_OutFlag2_STRINGS_ARE_UTF8 (1<<30 = 1073741824)
+//   = 1210061824; with PF_OutFlag2_SUPPORTS_GPU_RENDER_F32 (1<<25) = 1243616256.
+//
+// STRINGS_ARE_UTF8 matches AELocalise::SetUTF8FlagDeclared(true). AE 26 uses
+// UTF-8 without this flag; AE 27 and later use it only when the flag is set.
+// PiPL and GlobalSetup must carry the same literal.
 //
 // Multi-Frame Rendering is supported: render selectors never call AEGP and
 // share no mutable state (spec §3.12.2, §10.3). MIX_GUID lets the Luminance
 // Space Auto coefficients enter the frame cache key.
 #if defined(HG_HAS_CUDA) || defined(HG_HAS_OPENCL) || defined(HG_HAS_METAL)
-	#define OUT_FLAGS2		169874432
+	#define OUT_FLAGS2		1243616256
 #else
-	#define OUT_FLAGS2		136320000
+	#define OUT_FLAGS2		1210061824
 #endif
 
 #endif // HG_TARGET_H

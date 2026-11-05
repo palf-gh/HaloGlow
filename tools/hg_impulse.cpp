@@ -50,7 +50,8 @@ int main(int argc, char **argv)
 	if (phases.empty()) phases.emplace_back(0, 0);
 
 	const hg::Rect frame { 0, 0, size, size };
-	hg::Settings settings;			// isotropic, 100 % / 100 %
+	hg::Settings settings;			// isotropic, 100 % / 100 %, linear version-1 bases
+	settings.algorithmVersion = 1;
 	const hg::RenderScale scale;
 	// Basis order: 0 delta, 1..H local FIRs, then a_1..a_L, then c_1..c_L.
 	const int localCount = hg::kLocalBasisCount;

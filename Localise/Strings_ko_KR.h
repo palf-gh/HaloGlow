@@ -63,6 +63,8 @@ inline const char *GetString(LocKey::Key key) {
     return "켜기";
   case LocKey::STR_ALGORITHM_VERSION:
     return "알고리즘 버전";
+  case LocKey::STR_UPDATE_AVAILABLE:
+    return "새 버전 %d.%d.%d";
   default:
     break;
   }

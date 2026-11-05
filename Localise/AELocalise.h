@@ -1,28 +1,11 @@
-// AELocalise.h
-//
-// Header-only CJK+EN (and more) localisation helper for After Effects plugins.
-// In-tree copy of the measured host-encoding rules, so this plug-in stays
-// self-contained and only references the Adobe SDK.
-//
 #pragma once
 #ifndef AELOCALISE_H
 #define AELOCALISE_H
 
-// このヘッダーは、プロジェクト側で以下の順序でインクルードすることで、
-// ローカライズ機能を提供します：
-//
-// 使用方法：
-//   1. LocKey列挙型を定義したヘッダーをインクルード
-//      #include "Localise/LocKeys.h"
-//   2. 必要な言語の文字列リソースヘッダーをインクルード（すべて必要ではない）
-//      #include "Localise/Strings_en_US.h"   // 英語（必須）
-//      #include "Localise/Strings_ja_JP.h"   // 日本語（オプション）
-//      #include "Localise/Strings_zh_CN.h"   // 中国語(簡体字)（オプション）
-//      #include "Localise/Strings_ko_KR.h"   // 韓国語（オプション）
-//      その他の言語（DE_DE, ES_ES, FR_FR, IT_IT, PT_BR,
-//      RU_RU）も同様にオプション
-//   3. このヘッダーをインクルード
-//      #include "Localise/AELocalise.h"
+// In-tree copy of the PalfLib localiser (main, fc4191c) so HaloGlow stays
+// self-contained and does not reference Palf_Plugins. Include it after
+// LocKeys.h and the string headers:
+//   #include "Localise/AELocalise.h"
 //
 // 注意：このヘッダーは、LocKey型と各言語の名前空間（EN_US, JA_JP, ZH_CN,
 // KO_KR等）が
@@ -41,6 +24,7 @@
 //   - zh_CN: 中国語(簡体字) (Chinese (Simplified))
 
 #include "AE_SDK.h"
+#include "AETextEncodingPolicy.h"
 #include <atomic>
 #include <cstring>
 #include <string>
@@ -61,6 +45,36 @@
 // AEFX_AcquireSuite と AEFX_ReleaseSuite を使用するため
 
 namespace AELocalise {
+
+namespace Internal {
+inline std::atomic<bool> utf8FlagDeclared{false};
+// AE reports 125.x, 126.x and 127.x for product versions 25, 26 and 27.
+// A failed acquisition is not cached so a later callback can retry.
+inline bool GetAEDriverMajorVersion(PF_InData *in_dataP, A_long *majorP) {
+  if (!in_dataP || !in_dataP->pica_basicP || !majorP ||
+      in_dataP->appl_id != kAppID_AfterEffects)
+    return false;
+  const AEGP_UtilitySuite6 *suite = nullptr;
+  auto *basic = in_dataP->pica_basicP;
+  const A_Err err = basic->AcquireSuite(kAEGPUtilitySuite, kAEGPUtilitySuiteVersion6,
+                                        reinterpret_cast<const void **>(&suite));
+  if (err || !suite)
+    return false;
+  A_short major = 0, minor = 0;
+  const A_Err versionErr = suite->AEGP_GetDriverImplementationVersion(&major, &minor);
+  basic->ReleaseSuite(kAEGPUtilitySuite, kAEGPUtilitySuiteVersion6);
+  if (versionErr || major <= 0)
+    return false;
+  *majorP = major;
+  return true;
+}
+} // namespace Internal
+
+// Call from GLOBAL_SETUP when this effect declares PF_OutFlag2_STRINGS_ARE_UTF8
+// in both PiPL and its runtime out_flags2. Each plug-in DLL owns its state.
+inline void SetUTF8FlagDeclared(bool declared) {
+  Internal::utf8FlagDeclared.store(declared, std::memory_order_release);
+}
 // PF_AppGetLanguage()を使用して現在のロケールIDを取得
 // 返り値はロケールID（"ja_JP", "en_US", "zh_CN"など）
 inline std::string GetCurrentLanguage(PF_InData *in_dataP) {
@@ -307,68 +321,42 @@ inline void LogHostTextEncodingDecisionOnce(const std::wstring &executablePath,
 }
 
 inline bool HostUsesUTF8ForAEText(PF_InData *in_dataP) {
-  const bool isAfterEffects =
-      in_dataP && in_dataP->appl_id == kAppID_AfterEffects;
-  if (!isAfterEffects) {
+  if (!in_dataP || in_dataP->appl_id != kAppID_AfterEffects) {
     LogHostTextEncodingDecisionOnce(L"", false, false, false, 0, false,
-                                    "not-after-effects");
+                                   "not-after-effects");
     return false;
   }
-
-  static std::atomic<long> cachedUsesUTF8{-1};
-  long usesUTF8 = cachedUsesUTF8.load(std::memory_order_acquire);
-  if (usesUTF8 < 0) {
-    std::wstring executablePath = GetHostExecutablePath(in_dataP);
-    bool looksBeta = HostExecutablePathLooksLikeBeta(executablePath);
-    bool versionDetected = false;
+  static std::atomic<long> cachedDriverMajor{-1};
+  long major = cachedDriverMajor.load(std::memory_order_acquire);
+  if (major < 0) {
+    const auto executablePath = GetHostExecutablePath(in_dataP);
+    const bool looksBeta = HostExecutablePathLooksLikeBeta(executablePath);
     A_long detectedMajor = 0;
-    const char *reason = "legacy-version";
-
-    // WINDOWS. Every branch below is measured in After Effects, not inferred:
-    // 23, 24 and 25 want the legacy code page; 26.5 renders UTF-8 parameter
-    // names correctly; AfterFX (Beta).exe reports 27.0 and renders the very
-    // same UTF-8 bytes as the code page, and putting it back on the code page
-    // fixed it.
-    //
-    // Why 27 would want the code page when 26 does not is unexplained. Treat
-    // the list as observations, and measure a new major before adding it
-    // rather than assuming it inherits 26 — assuming exactly that is what
-    // garbled the 27 beta.
-    //
-    // The executable path containing "beta" is deliberately not part of the
-    // decision here. It used to stand in for "AE 26 beta" while 26 was
-    // unreleased; once 26 shipped the beta became 27, and short-circuiting on
-    // it sent UTF-8 to a host that wanted the code page. It is still logged,
-    // because knowing a host was a beta matters when a measurement disagrees.
-    versionDetected =
-        GetWindowsFileMajorVersion(executablePath, &detectedMajor);
-    if (!versionDetected) {
-      LogHostTextEncodingDecisionOnce(executablePath, true, looksBeta, false, 0,
-                                      false, "version-detection-failed");
-      return false;
+    const char *reason = "driver-version";
+    if (!GetAEDriverMajorVersion(in_dataP, &detectedMajor)) {
+      A_long fallbackMajor = 0;
+      if (!GetWindowsFileMajorVersion(executablePath, &fallbackMajor)) {
+        LogHostTextEncodingDecisionOnce(executablePath, true, looksBeta, false, 0,
+                                       false, "version-detection-failed");
+        return false;
+      }
+      detectedMajor = fallbackMajor + 100;
+      reason = "product-version-fallback";
     }
-    usesUTF8 = detectedMajor == 26 ? 1 : 0;
-    if (usesUTF8)
-      reason = "major-version";
-
     long expected = -1;
-    cachedUsesUTF8.compare_exchange_strong(
-        expected, usesUTF8, std::memory_order_release,
-        std::memory_order_relaxed);
-    usesUTF8 = cachedUsesUTF8.load(std::memory_order_acquire);
-    if (usesUTF8 < 0) {
-      LogHostTextEncodingDecisionOnce(executablePath, true, looksBeta,
-                                      versionDetected, detectedMajor, false,
-                                      "cache-not-set");
-      return false;
-    }
-
-    LogHostTextEncodingDecisionOnce(executablePath, true, looksBeta,
-                                    versionDetected, detectedMajor,
-                                    usesUTF8 != 0, reason);
+    cachedDriverMajor.compare_exchange_strong(expected, detectedMajor,
+                                             std::memory_order_release,
+                                             std::memory_order_relaxed);
+    major = cachedDriverMajor.load(std::memory_order_acquire);
+    const bool utf8 = UseUTF8ForAEDriver(
+        major, utf8FlagDeclared.load(std::memory_order_acquire));
+    LogHostTextEncodingDecisionOnce(executablePath, true, looksBeta, true,
+                                   major, utf8, reason);
   }
-
-  return usesUTF8 != 0;
+  // AE 26 predates the flag but requires UTF-8. On later hosts opt in only
+  // after the effect has declared the flag in PiPL and GLOBAL_SETUP.
+  return UseUTF8ForAEDriver(
+      major, utf8FlagDeclared.load(std::memory_order_acquire));
 }
 } // namespace Internal
 
@@ -646,62 +634,42 @@ inline void LogHostTextEncodingDecisionOnce(const std::string &executablePath,
 }
 
 inline bool HostUsesUTF8ForAEText(PF_InData *in_dataP) {
-  const bool isAfterEffects =
-      in_dataP && in_dataP->appl_id == kAppID_AfterEffects;
-  if (!isAfterEffects) {
+  if (!in_dataP || in_dataP->appl_id != kAppID_AfterEffects) {
     LogHostTextEncodingDecisionOnce("", false, false, false, 0, false,
-                                    "not-after-effects");
+                                   "not-after-effects");
     return false;
   }
-
-  static std::atomic<long> cachedUsesUTF8{-1};
-  long usesUTF8 = cachedUsesUTF8.load(std::memory_order_acquire);
-  if (usesUTF8 < 0) {
-    const std::string executablePath = GetHostExecutablePath(in_dataP);
+  static std::atomic<long> cachedDriverMajor{-1};
+  long major = cachedDriverMajor.load(std::memory_order_acquire);
+  if (major < 0) {
+    const auto executablePath = GetHostExecutablePath(in_dataP);
     const bool looksBeta = HostExecutablePathLooksLikeBeta(executablePath);
-    bool versionDetected = false;
     A_long detectedMajor = 0;
-    const char *reason = "legacy-version";
-
-    // macOS. This is the rule the UTF-8 support was written for in the first
-    // place — see the commit that added it, "match BPS macOS AE 26 localisation
-    // encoding", whose whole purpose was that Mac AE Beta and 26+ take UTF-8
-    // while older hosts keep the legacy encodings. Do not narrow it to match
-    // whatever Windows turns out to need; the two platforms are measured
-    // separately precisely because they disagree.
-    if (looksBeta) {
-      usesUTF8 = 1;
-      reason = "beta-path";
-    } else {
-      versionDetected = GetMacHostAppMajorVersion(&detectedMajor);
-      if (!versionDetected) {
-        LogHostTextEncodingDecisionOnce(executablePath, true, false, false, 0,
-                                        false, "version-detection-failed");
+    const char *reason = "driver-version";
+    if (!GetAEDriverMajorVersion(in_dataP, &detectedMajor)) {
+      A_long fallbackMajor = 0;
+      if (!GetMacHostAppMajorVersion(&fallbackMajor)) {
+        LogHostTextEncodingDecisionOnce(executablePath, true, looksBeta, false, 0,
+                                       false, "version-detection-failed");
         return false;
       }
-      usesUTF8 = detectedMajor >= 26 ? 1 : 0;
-      if (usesUTF8)
-        reason = "major-version";
+      detectedMajor = fallbackMajor + 100;
+      reason = "product-version-fallback";
     }
-
     long expected = -1;
-    cachedUsesUTF8.compare_exchange_strong(
-        expected, usesUTF8, std::memory_order_release,
-        std::memory_order_relaxed);
-    usesUTF8 = cachedUsesUTF8.load(std::memory_order_acquire);
-    if (usesUTF8 < 0) {
-      LogHostTextEncodingDecisionOnce(executablePath, true, looksBeta,
-                                      versionDetected, detectedMajor, false,
-                                      "cache-not-set");
-      return false;
-    }
-
-    LogHostTextEncodingDecisionOnce(executablePath, true, looksBeta,
-                                    versionDetected, detectedMajor,
-                                    usesUTF8 != 0, reason);
+    cachedDriverMajor.compare_exchange_strong(expected, detectedMajor,
+                                             std::memory_order_release,
+                                             std::memory_order_relaxed);
+    major = cachedDriverMajor.load(std::memory_order_acquire);
+    const bool utf8 = UseUTF8ForAEDriver(
+        major, utf8FlagDeclared.load(std::memory_order_acquire));
+    LogHostTextEncodingDecisionOnce(executablePath, true, looksBeta, true,
+                                   major, utf8, reason);
   }
-
-  return usesUTF8 != 0;
+  // AE 26 predates the flag but requires UTF-8. On later hosts opt in only
+  // after the effect has declared the flag in PiPL and GLOBAL_SETUP.
+  return UseUTF8ForAEDriver(
+      major, utf8FlagDeclared.load(std::memory_order_acquire));
 }
 } // namespace Internal
 
@@ -840,10 +808,8 @@ template <typename LocKeyType> inline const char *GetString(LocKeyType key) {
 }
 
 // ローカライズ文字列を取得し、AEが受け付ける文字コードで返す。
-// Windows: only major 26 takes UTF-8 (measured). AE 27 Beta reports 27.0 and
-// wants the legacy code page; do not short-circuit on "beta" in the path.
-// macOS: Beta or major >= 26 take UTF-8. Older hosts keep the language-specific
-// legacy encoding (Windows: code page, macOS: Shift-JIS, etc.).
+// Driver major <=125: locale encoding; 126: UTF-8 (pre-flag host);
+// >=127: UTF-8 only when the effect declares the flag in PiPL and GLOBAL_SETUP.
 //
 // Param / popup labels fed to PF_ADD_* must also respect
 // PF_MAX_EFFECT_PARAM_NAME_LEN (31 bytes). Under AE 26+ UTF-8 that is about
@@ -869,8 +835,6 @@ inline const char *EncodeUTF8ForAE(const char *utf8Str, PF_InData *in_dataP,
   Internal::s_tempBuffer = ConvertUTF8ToEncoding(utf8Str, codePage);
 #else
   if (Internal::HostUsesUTF8ForAEText(in_dataP)) {
-    Internal::s_tempBuffer = utf8Str;
-  } else if (localeId == "ko_KR") {
     Internal::s_tempBuffer = utf8Str;
   } else {
     CFStringEncoding encoding = GetEncodingForLanguage(localeId);

@@ -9,6 +9,7 @@
 
 #include "HaloGlow.h"
 #include "HG_ColourCache.h"
+#include "HG_UpdateCheck.h"
 
 #include <algorithm>
 #include <cmath>
@@ -122,7 +123,10 @@ PF_Err GlobalSetup(PF_InData *in_data, PF_OutData *out_data)
 	PF_Err err = PF_Err_NONE;
 	out_data->my_version = HG_VERSION_PACKED;
 	out_data->out_flags = OUT_FLAGS;
-	out_data->out_flags2 = OUT_FLAGS2;
+	// AE 27 and later read parameter names as UTF-8 only when this flag is set.
+	// The same bit is already inside OUT_FLAGS2, so the PiPL resource matches.
+	out_data->out_flags2 = OUT_FLAGS2 | PF_OutFlag2_STRINGS_ARE_UTF8;
+	HG_DeclareUTF8Text();
 
 	// AEGP registration: the plug-in id is needed for the colour settings
 	// queries made from main-thread UI commands.
@@ -139,11 +143,13 @@ PF_Err GlobalSetup(PF_InData *in_data, PF_OutData *out_data)
 			}
 		}
 	}
+	hg::StartUpdateCheck();
 	return err;
 }
 
 PF_Err GlobalSetdown(PF_InData *in_data)
 {
+	hg::FinishUpdateCheck();
 	if (in_data && in_data->global_data && in_data->pica_basicP) {
 		AEGP_SuiteHandler suites(in_data->pica_basicP);
 		suites.HandleSuite1()->host_dispose_handle(in_data->global_data);
@@ -161,11 +167,11 @@ PF_Err PreRender(PF_InData *in_data, PF_OutData *out_data, PF_PreRenderExtra *ex
 	bool autoLuminance = false;
 	hg::ColourSnapshot snapshot;
 	err = ReadSettings(in_data, out_data, data->settings, data->algorithmVersion, autoLuminance, snapshot);
-	if (!err && data->algorithmVersion != hg::kAlgorithmVersion) {
-		// A project saved by a newer HaloGlow: never draw it with another
-		// version's coefficients (§18.2).
+	if (!err && !hg::IsSupportedAlgorithmVersion(data->algorithmVersion)) {
+		// Never silently draw an unsupported saved rendering version (§18.2).
 		err = PF_Err_BAD_CALLBACK_PARAM;
 	}
+	data->settings.algorithmVersion = data->algorithmVersion;
 	data->settings = hg::Sanitise(data->settings);
 	data->scale.downsampleX = RationalToDouble(in_data->downsample_x);
 	data->scale.downsampleY = RationalToDouble(in_data->downsample_y);

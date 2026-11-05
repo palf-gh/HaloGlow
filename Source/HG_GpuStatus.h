@@ -13,6 +13,10 @@
 
 #include <string>
 
+// The read-only GPU status row. A newer GitHub release adds one line below it.
+constexpr int HG_kGpuStatusHeight = 40;
+constexpr int HG_kUpdateLineHeight = 18;
+
 void HG_RecordGpuDevice(const char *framework, const std::string &deviceName);
 void HG_ClearGpuDevice();
 bool HG_IsGpuDeviceReady();

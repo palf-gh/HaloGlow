@@ -63,6 +63,8 @@ inline const char *GetString(LocKey::Key key) {
     return "On";
   case LocKey::STR_ALGORITHM_VERSION:
     return "Algorithm Version";
+  case LocKey::STR_UPDATE_AVAILABLE:
+    return "Update %d.%d.%d is available";
   default:
     break;
   }

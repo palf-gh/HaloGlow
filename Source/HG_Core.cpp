@@ -143,6 +143,7 @@ void FillPixelParams(const Settings &s, float gain, HG_PixelParams &p)
 	p.glowOpacity = s.glowOpacity / 100.0f;
 	p.sourceOpacity = s.sourceOpacity / 100.0f;
 	p.glowOnly = s.glowOnly ? 1 : 0;
+	p.algorithmVersion = s.algorithmVersion;
 }
 
 void BuildLocalKernel(const Coefficients &c, double sigmaScaleX, double sigmaScaleY,
@@ -302,6 +303,7 @@ Plan BuildPlanImpl(const Settings &raw, const RenderScale &scale, const Rect &in
 	plan.radiusX = s.size * wx * scale.downsampleX / par;
 	plan.radiusY = s.size * wy * scale.downsampleY;
 
+	plan.falloff = s.falloff;
 	plan.glowActive = gain > 0.0 && s.glowOpacity > 0.0f && rmaxFull > 0.0;
 	if (!plan.glowActive) return plan;
 
@@ -556,51 +558,99 @@ void LocalTerm(const Plan &plan, const Image &e, const Rect &dst, Image &out)
 
 } // namespace
 
-void FilterEmission(const Plan &plan, const Image &emission, Image &filtered)
+void AccumulatePyramid(const Plan &plan, const Image &emission, const PyramidPlan &pyr, Image &filtered)
 {
 	const Rect &out = plan.outputRect;
-	LocalTerm(plan, emission, out, filtered);
-	if (out.Empty()) return;
-
-	for (int p = 0; p < plan.pyramidCount; ++p) {
-		const PyramidPlan &pyr = plan.pyramid[p];
-		const int L = pyr.levelCount;
-		std::vector<Image> d(L + 1);
-		for (int j = 1; j <= L; ++j) {
-			const Image &prev = (j == 1) ? emission : d[j - 1];
-			Downsample(prev, pyr.level[j].halveX, pyr.level[j].halveY, pyr.level[j].dDomain, d[j]);
-		}
-		Image g, gPrev;
-		for (int j = L; j >= 1; --j) {
-			const LevelPlan &lv = pyr.level[j];
-			g.Reset(lv.gDomain);
-			const float aj = plan.coefficients.a[j];
-			const float cj = plan.coefficients.c[j];
-			const bool hasCoarse = j < L;
-			const bool hx = hasCoarse && pyr.level[j + 1].halveX;
-			const bool hy = hasCoarse && pyr.level[j + 1].halveY;
-			ParallelRows(lv.gDomain.y0, lv.gDomain.y1, [&](int y) {
-				HG_RGBA *row = g.Row(y);
-				for (int x = lv.gDomain.x0; x < lv.gDomain.x1; ++x) {
+	const int L = pyr.levelCount;
+	const bool scales = plan.pixel.algorithmVersion >= 2;
+	std::vector<Image> d(L + 1);
+	for (int j = 1; j <= L; ++j) {
+		const Image &prev = (j == 1) ? emission : d[j - 1];
+		Downsample(prev, pyr.level[j].halveX, pyr.level[j].halveY, pyr.level[j].dDomain, d[j]);
+	}
+	Image g, gPrev;
+	for (int j = L; j >= 1; --j) {
+		const LevelPlan &lv = pyr.level[j];
+		g.Reset(lv.gDomain);
+		const float aj = plan.coefficients.a[j];
+		const float cj = plan.coefficients.c[j];
+		const float scaleGain = hg_scale_gain(j, L, plan.falloff);
+		const bool hasCoarse = j < L;
+		const bool hx = hasCoarse && pyr.level[j + 1].halveX;
+		const bool hy = hasCoarse && pyr.level[j + 1].halveY;
+		ParallelRows(lv.gDomain.y0, lv.gDomain.y1, [&](int y) {
+			HG_RGBA *row = g.Row(y);
+			for (int x = lv.gDomain.x0; x < lv.gDomain.x1; ++x) {
+				if (scales) {
+					const HG_RGBA low = (lv.blurX || lv.blurY)
+						? Binomial5At(d[j], lv.blurX, lv.blurY, x, y)
+						: d[j].At(x, y);
+					const HG_RGBA fine = hg_tone_scale(plan.pixel, low, scaleGain);
+					const HG_RGBA coarse = hasCoarse
+						? UpsampleAt(gPrev, hx, hy, x, y)
+						: HG_RGBA { 0.f, 0.f, 0.f, 0.f };
+					row[x - lv.gDomain.x0] = hg_screen_rgba(coarse, fine);
+				} else {
 					HG_RGBA acc { 0.f, 0.f, 0.f, 0.f };
 					if (aj > 0.0f) Mad(acc, aj, d[j].At(x, y));
 					if (cj > 0.0f) Mad(acc, cj, Binomial5At(d[j], lv.blurX, lv.blurY, x, y));
 					if (hasCoarse) Mad(acc, 1.0f, UpsampleAt(gPrev, hx, hy, x, y));
 					row[x - lv.gDomain.x0] = acc;
 				}
-			});
-			std::swap(g, gPrev);
-		}
-		// gPrev now holds G_1.
-		const float w = pyr.weight;
-		const bool hx = pyr.level[1].halveX;
-		const bool hy = pyr.level[1].halveY;
-		ParallelRows(out.y0, out.y1, [&](int y) {
-			HG_RGBA *row = filtered.Row(y);
-			for (int x = out.x0; x < out.x1; ++x)
-				Mad(row[x - out.x0], w, UpsampleAt(gPrev, hx, hy, x, y));
+			}
 		});
+		std::swap(g, gPrev);
 	}
+	if (L < 1) return;
+	// gPrev now holds G_1.
+	const float w = pyr.weight;
+	const bool hx = pyr.level[1].halveX;
+	const bool hy = pyr.level[1].halveY;
+	ParallelRows(out.y0, out.y1, [&](int y) {
+		HG_RGBA *row = filtered.Row(y);
+		for (int x = out.x0; x < out.x1; ++x)
+			Mad(row[x - out.x0], w, UpsampleAt(gPrev, hx, hy, x, y));
+	});
+}
+
+void FilterEmission(const Plan &plan, const Image &emission, Image &filtered)
+{
+	const Rect &out = plan.outputRect;
+	LocalTerm(plan, emission, out, filtered);
+	if (out.Empty()) return;
+
+	if (plan.pixel.algorithmVersion < 2) {
+		for (int p = 0; p < plan.pyramidCount; ++p)
+			AccumulatePyramid(plan, emission, plan.pyramid[p], filtered);
+		return;
+	}
+
+	Image wide;
+	wide.Reset(out);
+	for (int p = 0; p < plan.pyramidCount; ++p)
+		AccumulatePyramid(plan, emission, plan.pyramid[p], wide);
+
+	float kernelSum = 0.0f;
+	for (int i = 0; i < kLocalSize * kLocalSize; ++i) kernelSum += plan.localKernel[i];
+	const float norm = kernelSum > 0.0f ? 1.0f / kernelSum : 0.0f;
+	int octaveCount = 1;
+	for (int p = 0; p < plan.pyramidCount; ++p)
+		if (plan.pyramid[p].levelCount > octaveCount) octaveCount = plan.pyramid[p].levelCount;
+	const float localGain = hg_scale_gain(0, octaveCount, plan.falloff);
+	ParallelRows(out.y0, out.y1, [&](int y) {
+		HG_RGBA *row = filtered.Row(y);
+		const HG_RGBA *localRow = filtered.Row(y);
+		const HG_RGBA *wideRow = wide.Row(y);
+		for (int x = out.x0; x < out.x1; ++x) {
+			const int i = x - out.x0;
+			HG_RGBA local = localRow[i];
+			local.r *= norm;
+			local.g *= norm;
+			local.b *= norm;
+			local.a *= norm;
+			row[i] = hg_screen_rgba(wideRow[i], hg_tone_scale(plan.pixel, local, localGain));
+		}
+	});
 }
 
 void RenderCPU(const Plan &plan, const Image &source, Image &output)
@@ -610,12 +660,12 @@ void RenderCPU(const Plan &plan, const Image &source, Image &output)
 	if (out.Empty()) return;
 
 	Image filtered;
+	Image emission;
 	if (plan.glowActive) {
 		Rect eRect = plan.hasLocalSpread ? Inflate(out, kLocalRadius, kLocalRadius) : out;
 		for (int p = 0; p < plan.pyramidCount; ++p)
 			eRect = Union(eRect, plan.pyramid[p].level[0].dDomain);
 		eRect = Intersect(eRect, plan.inputRect);
-		Image emission;
 		emission.Reset(eRect);
 		ParallelRows(eRect.y0, eRect.y1, [&](int y) {
 			HG_RGBA *row = emission.Row(y);

@@ -8,6 +8,7 @@
 
 #include "HaloGlow.h"
 #include "HG_ColourCache.h"
+#include "HG_GpuStatus.h"
 
 #include "Localise/LocKeys.h"
 #include "Localise/Strings_en_US.h"
@@ -107,6 +108,11 @@ std::string MemHandleText(AEGP_MemorySuite1 *mem, AEGP_MemHandle h, bool utf16)
 
 } // namespace
 
+void HG_DeclareUTF8Text()
+{
+	AELocalise::SetUTF8FlagDeclared(true);
+}
+
 //-----------------------------------------------------------------------------
 PF_Err HG_ParamsSetup(PF_InData *in_data, PF_OutData *out_data)
 {
@@ -124,7 +130,7 @@ PF_Err HG_ParamsSetup(PF_InData *in_data, PF_OutData *out_data)
 		def.flags = PF_ParamFlag_SUPERVISE | PF_ParamFlag_CANNOT_TIME_VARY;
 		def.ui_flags = PF_PUI_CONTROL | PF_PUI_DONT_ERASE_CONTROL;
 		def.ui_width = 280;
-		def.ui_height = 40;
+		def.ui_height = HG_kGpuStatusHeight;
 		def.uu.id = HG_GPU_STATUS;
 		ERR(PF_ADD_PARAM(in_data, -1, &def));
 	}
@@ -192,6 +198,7 @@ PF_Err HG_UpdateParamsUI(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *
 {
 	(void)out_data;
 	HG_RefreshColourCache(in_data);
+	if (params && params[HG_GPU_STATUS]) HG_ApplyUpdateLineHeight(in_data, out_data, params[HG_GPU_STATUS]);
 	if (!params || !params[HG_GLOW_ONLY] || !params[HG_SOURCE_OPACITY]) return PF_Err_NONE;
 
 	const bool glowOnly = params[HG_GLOW_ONLY]->u.bd.value != 0;

@@ -63,6 +63,8 @@ inline const char *GetString(LocKey::Key key) {
     return "开";
   case LocKey::STR_ALGORITHM_VERSION:
     return "算法版本";
+  case LocKey::STR_UPDATE_AVAILABLE:
+    return "有新版本 %d.%d.%d";
   default:
     break;
   }
