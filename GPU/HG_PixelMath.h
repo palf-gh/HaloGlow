@@ -72,6 +72,7 @@ typedef struct HG_PixelParams {
 	float sourceOpacity;	// p
 	int glowOnly;			// 1 = output glow RGBA only (§8.2)
 	int algorithmVersion;	// persisted rendering behaviour
+	int premultipliedOutput;	// Alpha Output: 0 straight (AE worlds), 1 black-premultiplied
 } HG_PixelParams;
 
 HG_FN float hg_clamp(float x, float lo, float hi)

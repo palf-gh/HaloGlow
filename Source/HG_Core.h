@@ -84,6 +84,7 @@ struct Settings {
 	float glowOpacity = 100.0f;		// 0..100 %
 	float sourceOpacity = 100.0f;	// 0..100 %
 	bool glowOnly = false;
+	bool premultipliedOutput = false;	// Alpha Output (§3.14): false = straight
 	float luminance[3] = { 0.2126390f, 0.7151687f, 0.0721923f };
 };
 

@@ -36,8 +36,9 @@
 //-----------------------------------------------------------------------------
 // Parameter IDs (spec §18.2). Persisted by After Effects once released:
 // never renumber or reuse an ID after that; append new ones before
-// HG_NUM_PARAMS. In version 1 the UI order equals the ID order, so the param
-// index equals the ID.
+// HG_NUM_PARAMS. Up to HG_GLOW_ONLY the UI order equals the ID order; Alpha
+// Output (added after 1.0.0) is shown inside the Output group, so params[] and
+// PF_CHECKOUT_PARAM must use HG_Index() for the IDs after HG_GLOW_ONLY.
 //-----------------------------------------------------------------------------
 enum HG_ParamId {
 	HG_INPUT = 0,
@@ -67,8 +68,22 @@ enum HG_ParamId {
 	HG_GLOW_ONLY,
 	HG_TOPIC_OUTPUT_END,
 	HG_ALGORITHM_VERSION,
+	HG_ALPHA_OUTPUT,		// popup: 1 Straight (default), 2 Premultiplied
 	HG_NUM_PARAMS
 };
+
+enum HG_AlphaOutput {
+	HG_ALPHA_STRAIGHT = 1,
+	HG_ALPHA_PREMULTIPLIED = 2,
+};
+
+// UI index of a parameter ID (the order HG_ParamsSetup adds them).
+constexpr A_long HG_Index(HG_ParamId id)
+{
+	return id <= HG_GLOW_ONLY ? static_cast<A_long>(id)
+		: id == HG_ALPHA_OUTPUT ? static_cast<A_long>(HG_GLOW_ONLY) + 1
+		: static_cast<A_long>(id) + 1;	// HG_TOPIC_OUTPUT_END, HG_ALGORITHM_VERSION
+}
 
 struct HG_GlobalData {
 	AEGP_PluginID plugin_id;

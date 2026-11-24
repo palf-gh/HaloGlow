@@ -7,8 +7,9 @@
 	run the same arithmetic in the same order as the CPU reference (HG_Core.cpp).
 
 	Buffers are float4 arrays. Internal pyramid images store premultiplied RGBA
-	in x/y/z/w. After Effects GPU worlds are BGRA128, premultiplied like the
-	core, so loads and stores only swizzle and sanitise (spec §6.1).
+	in x/y/z/w. After Effects GPU worlds are BGRA128 with straight alpha; the
+	world loader premultiplies, and the final store un-premultiplies unless
+	Alpha Output asks for premultiplied pixels (spec §6.1).
 	Requires HG_PixelMath.h first. The argument structs are also visible to
 	host C++ (HG_GpuRender.cpp); the bodies compile only in GPU languages.
 */
@@ -143,7 +144,7 @@ HG_FN HG_RGBA hg_load(HG_GLOBAL const HG_F4 *p, HG_Buf b, int x, int y)
 	return hg_rgba(v.x, v.y, v.z, v.w);
 }
 
-// AE world pixel: premultiplied BGRA -> premultiplied RGBA (sanitised).
+// AE world pixel: BGRA, straight alpha -> premultiplied RGBA (sanitised).
 HG_FN HG_RGBA hg_load_world(HG_GLOBAL const HG_F4 *p, HG_Buf b, int x, int y)
 {
 	const int lx = x - b.x0;
@@ -152,7 +153,8 @@ HG_FN HG_RGBA hg_load_world(HG_GLOBAL const HG_F4 *p, HG_Buf b, int x, int y)
 		return hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
 	}
 	const HG_F4 v = p[ly * b.pitch + lx];
-	return hg_sanitise(hg_rgba(v.z, v.y, v.x, v.w));
+	const HG_RGBA s = hg_sanitise(hg_rgba(v.z, v.y, v.x, v.w));
+	return hg_rgba(s.r * s.a, s.g * s.a, s.b * s.a, s.a);
 }
 
 HG_FN float hg_finite_clamp(float x)
@@ -167,11 +169,25 @@ HG_FN void hg_store(HG_GLOBAL HG_F4 *p, HG_Buf b, int x, int y, HG_RGBA v)
 	p[(y - b.y0) * b.pitch + (x - b.x0)] = HG_MAKE_F4(v.r, v.g, v.b, v.a);
 }
 
-// Premultiplied RGBA -> AE premultiplied BGRA, finite by construction.
-HG_FN void hg_store_world(HG_GLOBAL HG_F4 *p, HG_Buf b, int x, int y, HG_RGBA v)
+// Premultiplied RGBA -> AE BGRA: straight by default, or left premultiplied
+// when Alpha Output asks for it (§6.1). Finite by construction.
+HG_FN void hg_store_world(HG_GLOBAL HG_F4 *p, HG_Buf b, int x, int y, HG_RGBA v, int premultiplied)
 {
-	p[(y - b.y0) * b.pitch + (x - b.x0)] =
-		HG_MAKE_F4(hg_finite_clamp(v.b), hg_finite_clamp(v.g), hg_finite_clamp(v.r), v.a);
+	float r = 0.0f;
+	float g = 0.0f;
+	float bl = 0.0f;
+	if (premultiplied) {
+		r = hg_finite_clamp(v.r);
+		g = hg_finite_clamp(v.g);
+		bl = hg_finite_clamp(v.b);
+	} else if (v.a > 0.0f) {
+		// Divide, never multiply by 1/a: a subnormal alpha overflows 1/a to
+		// infinity while the quotient itself stays finite (§12.2).
+		r = hg_finite_clamp(v.r / v.a);
+		g = hg_finite_clamp(v.g / v.a);
+		bl = hg_finite_clamp(v.b / v.a);
+	}
+	p[(y - b.y0) * b.pitch + (x - b.x0)] = HG_MAKE_F4(bl, g, r, v.a);
 }
 
 // Emission E: zero outside the light-source rect, so pixels the host supplies
@@ -323,23 +339,27 @@ HG_FN void hg_final_body(HG_GLOBAL const HG_F4 *src, HG_GLOBAL HG_F4 *dst, HG_GL
 	const int y = a.dst.y0 + ly;
 
 	if (!a.glowActive) {
-		// Bypass (§3.2): the input bit-exact at Source Opacity 100, otherwise
-		// premultiplied RGB and alpha faded together; Glow Only is transparent.
+		// Bypass (§3.2): straight output keeps the input RGB bit-exact and fades
+		// alpha by Source Opacity; premultiplied output premultiplies, then
+		// fades RGB and alpha together. Glow Only is transparent black.
 		HG_F4 o = HG_MAKE_F4(0.0f, 0.0f, 0.0f, 0.0f);
 		const int sx = x - a.src.x0;
 		const int sy = y - a.src.y0;
 		if (!a.pixel.glowOnly && sx >= 0 && sy >= 0 && sx < a.src.w && sy < a.src.h) {
 			o = src[sy * a.src.pitch + sx];
-			if (a.pixel.sourceOpacity != 1.0f) {
-				const float q = a.pixel.sourceOpacity;
-				o = HG_MAKE_F4(o.x * q, o.y * q, o.z * q, o.w * q);
+			const float q = a.pixel.sourceOpacity;
+			if (a.pixel.premultipliedOutput) {
+				const float k = o.w * q;
+				o = HG_MAKE_F4(o.x * k, o.y * k, o.z * k, o.w * q);
+			} else if (q != 1.0f) {
+				o.w = o.w * q;
 			}
 		}
 		dst[ly * a.dst.pitch + lx] = o;
 		return;
 	}
 
-	HG_RGBA local = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
+	HG_RGBA nearTerm = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
 	if (a.hasLocal) {
 		for (int j = 0; j < HG_LOCAL_SIZE; ++j) {
 			HG_RGBA row = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
@@ -350,10 +370,10 @@ HG_FN void hg_final_body(HG_GLOBAL const HG_F4 *src, HG_GLOBAL HG_F4 *dst, HG_GL
 												 x + i - HG_LOCAL_RADIUS, y + j - HG_LOCAL_RADIUS));
 				}
 			}
-			hg_mad(&local, 1.0f, row);
+			hg_mad(&nearTerm, 1.0f, row);
 		}
 	} else if (a.a0 > 0.0f) {
-		hg_mad(&local, a.a0, hg_emission(src, a.src, a.pixel, a.lightX0, a.lightY0, a.lightX1, a.lightY1, x, y));
+		hg_mad(&nearTerm, a.a0, hg_emission(src, a.src, a.pixel, a.lightX0, a.lightY0, a.lightX1, a.lightY1, x, y));
 	}
 	HG_RGBA wide = hg_rgba(0.0f, 0.0f, 0.0f, 0.0f);
 	if (a.pyramidCount > 0) {
@@ -364,18 +384,18 @@ HG_FN void hg_final_body(HG_GLOBAL const HG_F4 *src, HG_GLOBAL HG_F4 *dst, HG_GL
 	}
 	HG_RGBA b;
 	if (a.screenScales) {
-		local.r *= a.localNorm;
-		local.g *= a.localNorm;
-		local.b *= a.localNorm;
-		local.a *= a.localNorm;
-		b = hg_screen_rgba(wide, hg_tone_scale(a.pixel, local, a.localScaleGain));
+		nearTerm.r *= a.localNorm;
+		nearTerm.g *= a.localNorm;
+		nearTerm.b *= a.localNorm;
+		nearTerm.a *= a.localNorm;
+		b = hg_screen_rgba(wide, hg_tone_scale(a.pixel, nearTerm, a.localScaleGain));
 	} else {
-		b = local;
+		b = nearTerm;
 		hg_mad(&b, 1.0f, wide);
 	}
 	const HG_RGBA glow = hg_glow_from_filtered(a.pixel, b);
 	const HG_RGBA out = hg_composite(a.pixel, hg_load_world(src, a.src, x, y), glow);
-	hg_store_world(dst, a.dst, x, y, out);
+	hg_store_world(dst, a.dst, x, y, out, a.pixel.premultipliedOutput);
 }
 
 #endif // GPU languages
