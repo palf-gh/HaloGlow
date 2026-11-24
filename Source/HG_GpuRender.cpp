@@ -92,10 +92,7 @@ Status Render(const Plan &plan, Backend &backend, const World &src, const World 
 	fa.lightX1 = plan.inputRect.x1;
 	fa.lightY1 = plan.inputRect.y1;
 	fa.screenScales = plan.pixel.algorithmVersion >= 2 ? 1 : 0;
-	int octaveCount = 1;
-	for (int p = 0; p < plan.pyramidCount; ++p)
-		if (plan.pyramid[p].levelCount > octaveCount) octaveCount = plan.pyramid[p].levelCount;
-	fa.localScaleGain = hg_scale_gain(0, octaveCount, plan.falloff);
+	fa.localScaleGain = plan.levelGain[0];
 	float kernelSum = 0.0f;
 	for (float weight : plan.localKernel) kernelSum += weight;
 	fa.localNorm = kernelSum > 0.0f ? 1.0f / kernelSum : 0.0f;
@@ -143,7 +140,7 @@ Status Render(const Plan &plan, Backend &backend, const World &src, const World 
 				aa.blurY = pyr.level[j].blurY ? 1 : 0;
 				aa.hasCoarse = j < L ? 1 : 0;
 				aa.screenScales = plan.pixel.algorithmVersion >= 2 ? 1 : 0;
-				aa.scaleGain = hg_scale_gain(j, L, plan.falloff);
+				aa.scaleGain = plan.levelGain[j];
 				aa.pixel = plan.pixel;
 				const void *coarse = dummy;
 				if (j < L) {

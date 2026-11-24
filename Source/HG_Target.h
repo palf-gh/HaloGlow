@@ -39,13 +39,13 @@
 //-----------------------------------------------------------------------------
 #define	MAJOR_VERSION	1
 #define	MINOR_VERSION	0
-#define	BUG_VERSION		0
+#define	BUG_VERSION		1
 #define	STAGE_VERSION	3		// PF_Stage_RELEASE
 #define	BUILD_VERSION	1
 
-// PF_VERSION(1,0,0,3,1) = (1<<19)|(0<<15)|(0<<11)|(3<<9)|1 = 525825.
+// PF_VERSION(1,0,1,3,1) = (1<<19)|(0<<15)|(1<<11)|(3<<9)|1 = 527873.
 // PiPLtool rejects shifts, so the packed value is a literal.
-#define	HG_VERSION_PACKED	525825
+#define	HG_VERSION_PACKED	527873
 
 //-----------------------------------------------------------------------------
 // Global out-flags. Literals only, identical in the PiPL and GlobalSetup, or

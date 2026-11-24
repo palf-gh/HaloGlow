@@ -569,6 +569,44 @@ void TestScaleFalloff()
 	CHECK(ratio > 2.0 && ratio < 3.6, "encoded shoulder ratio %g", ratio);
 }
 
+void TestScaleSizeContinuity()
+{
+	// Version 2: Size must change the glow continuously and monotonically. The
+	// first release stepped whole octaves and toggled the local kernel, which
+	// flickered while Size was animated (§8.1, §12.4).
+	const int half = 160;
+	const hg::Rect frame { -half, -half, half, half };
+	hg::Image e;
+	e.Reset(frame);
+	e.pixels[std::size_t(half) * frame.Width() + half] = HG_RGBA { 1.f, 1.f, 1.f, 1.f };
+	const int radii[] = { 0, 1, 4, 12, 32 };
+	constexpr int kRadii = sizeof(radii) / sizeof(radii[0]);
+	double prev[kRadii] = {};
+	double prevSpan = -1.0;
+	for (int i = 0; i <= 112; ++i) {
+		hg::Settings s;
+		s.threshold = 0.0f;
+		s.size = std::pow(2.0f, i / 16.0f);
+		const hg::Plan plan = hg::BuildPlan(s, hg::RenderScale {}, frame, frame);
+		CHECK(plan.octaveSpan >= prevSpan, "octave span reversed at size %g", s.size);
+		prevSpan = plan.octaveSpan;
+		hg::Image b;
+		hg::FilterEmission(plan, e, b);
+		for (int k = 0; k < kRadii; ++k) {
+			const double v = b.At(radii[k], 0).r;
+			if (i > 0) {
+				CHECK(v >= prev[k] * (1.0 - 1e-5), "size %g r=%d shrank: %g -> %g", s.size, radii[k], prev[k], v);
+				// A level fading in from zero grows fast in relative terms, so
+				// bound the relative step only where the tail is visible.
+				CHECK(v - prev[k] <= 0.02, "size %g r=%d jumped: %g -> %g", s.size, radii[k], prev[k], v);
+				if (prev[k] > 1e-3)
+					CHECK(v <= prev[k] * 1.25, "size %g r=%d jumped: %g -> %g", s.size, radii[k], prev[k], v);
+			}
+			prev[k] = v;
+		}
+	}
+}
+
 void TestReleaseTag()
 {
 	const hg::ReleaseVersion plain = hg::ParseReleaseTag("1.2.3", 5);
@@ -612,6 +650,7 @@ int main(int argc, char **argv)
 	TestTone();
 	TestVersionedComposite();
 	TestScaleFalloff();
+	TestScaleSizeContinuity();
 	TestReleaseTag();
 	TestDcGain();
 	TestTiling();

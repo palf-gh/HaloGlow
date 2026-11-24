@@ -61,6 +61,10 @@ inline const char *GetString(LocKey::Key key) {
     return "グローのみ";
   case LocKey::STR_GLOW_ONLY_CHECKBOX:
     return "オン";
+  case LocKey::STR_ALPHA_OUTPUT:
+    return "アルファ出力";
+  case LocKey::STR_ALPHA_OUTPUT_ITEMS:
+    return "ストレート|プリマルチプライ";
   case LocKey::STR_ALGORITHM_VERSION:
     return "アルゴリズムの版";
   case LocKey::STR_UPDATE_AVAILABLE:

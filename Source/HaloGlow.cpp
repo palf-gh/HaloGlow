@@ -99,8 +99,11 @@ PF_Err ReadSettings(PF_InData *in_data, PF_OutData *out_data, hg::Settings &s, i
 		hg::LuminanceCoefficients(static_cast<hg::LuminanceSpace>(space), s.luminance);
 	}
 
+	if (!err && !(err = ReadParam(in_data, HG_Index(HG_ALPHA_OUTPUT), def)))
+		s.premultipliedOutput = def.u.pd.value == HG_ALPHA_PREMULTIPLIED;
+
 	version = hg::kAlgorithmVersion;
-	if (!err && !(err = ReadParam(in_data, HG_ALGORITHM_VERSION, def))) version = def.u.sd.value;
+	if (!err && !(err = ReadParam(in_data, HG_Index(HG_ALGORITHM_VERSION), def))) version = def.u.sd.value;
 	return err;
 }
 

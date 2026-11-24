@@ -144,6 +144,7 @@ void FillPixelParams(const Settings &s, float gain, HG_PixelParams &p)
 	p.sourceOpacity = s.sourceOpacity / 100.0f;
 	p.glowOnly = s.glowOnly ? 1 : 0;
 	p.algorithmVersion = s.algorithmVersion;
+	p.premultipliedOutput = s.premultipliedOutput ? 1 : 0;
 }
 
 void BuildLocalKernel(const Coefficients &c, double sigmaScaleX, double sigmaScaleY,
@@ -163,6 +164,40 @@ void BuildLocalKernel(const Coefficients &c, double sigmaScaleX, double sigmaSca
 			for (int x = 0; x < kLocalSize; ++x)
 				out[y * kLocalSize + x] += c.b[h] * hx[x] * hy[y];
 	}
+}
+
+// Version 2 (§8.1): octaves between the local kernel and the coarsest level.
+// log2(R) + 1 gives the depth the first release used at powers of two (Size
+// 64 -> 7 full levels) and the same output extent, but is continuous and
+// monotone in Size.
+constexpr double kScaleOctaveOffset = 1.0;
+
+double ScaleOctaveSpan(double majorRadius)
+{
+	if (!(majorRadius > 0.0)) return 0.0;
+	const double span = std::log2(majorRadius) + kScaleOctaveOffset;
+	return std::min(std::max(span, 0.0), static_cast<double>(kMaxLevels));
+}
+
+// Version 2 local kernel: delta -> sigma 0.5 -> 0.75 -> 1.0 px, piecewise
+// linear in the major radius (0 / 0.5 / 0.75 / 1 px) and fixed beyond. It is
+// independent of the calibration table, whose sparse local weights jumped.
+void ScaleLocalWeights(double majorRadius, Coefficients &c)
+{
+	c.a[0] = 0.0f;
+	for (float &b : c.b) b = 0.0f;
+	static const double kKnots[4] = { 0.0, 0.5, 0.75, 1.0 };
+	float *node[4] = { &c.a[0], &c.b[0], &c.b[1], &c.b[2] };
+	const double r = std::max(majorRadius, 0.0);
+	if (r >= kKnots[3]) {
+		*node[3] = 1.0f;
+		return;
+	}
+	int k = 0;
+	while (k < 2 && r >= kKnots[k + 1]) ++k;
+	const double t = (r - kKnots[k]) / (kKnots[k + 1] - kKnots[k]);
+	*node[k] = static_cast<float>(1.0 - t);
+	*node[k + 1] += static_cast<float>(t);
 }
 
 void PlanPyramidDomains(PyramidPlan &pyr, const Rect &inputRect, const Rect &outputRect)
@@ -312,6 +347,24 @@ Plan BuildPlanImpl(const Settings &raw, const RenderScale &scale, const Rect &in
 	const double minor = xMajor ? plan.radiusY : plan.radiusX;
 
 	plan.coefficients = override ? *override : LookupCoefficients(std::log2(major), s.falloff);
+	if (s.algorithmVersion >= 2) {
+		// Size drives a continuous octave span; the table is not used (§8.1).
+		Coefficients &cv = plan.coefficients;
+		cv = Coefficients {};
+		ScaleLocalWeights(major, cv);
+		const double span = ScaleOctaveSpan(major);
+		const int levels = static_cast<int>(std::ceil(span - 1.0e-9));
+		const double fraction = span - (levels - 1);	// weight of the top level
+		cv.topLevel = levels;
+		plan.octaveSpan = span;
+		const double tail = hg_octave_tail(s.falloff);
+		plan.levelGain[0] = 8.0f;
+		for (int j = 1; j <= levels; ++j) {
+			double g = 8.0 * std::pow(tail, j / span);
+			if (j == levels) g *= std::min(std::max(fraction, 0.0), 1.0);
+			plan.levelGain[j] = static_cast<float>(g);
+		}
+	}
 	const Coefficients &c = plan.coefficients;
 
 	const double ratio = minor > 0.0 ? minor / major : 0.0;
@@ -574,7 +627,7 @@ void AccumulatePyramid(const Plan &plan, const Image &emission, const PyramidPla
 		g.Reset(lv.gDomain);
 		const float aj = plan.coefficients.a[j];
 		const float cj = plan.coefficients.c[j];
-		const float scaleGain = hg_scale_gain(j, L, plan.falloff);
+		const float scaleGain = plan.levelGain[j];
 		const bool hasCoarse = j < L;
 		const bool hx = hasCoarse && pyr.level[j + 1].halveX;
 		const bool hy = hasCoarse && pyr.level[j + 1].halveY;
@@ -633,10 +686,7 @@ void FilterEmission(const Plan &plan, const Image &emission, Image &filtered)
 	float kernelSum = 0.0f;
 	for (int i = 0; i < kLocalSize * kLocalSize; ++i) kernelSum += plan.localKernel[i];
 	const float norm = kernelSum > 0.0f ? 1.0f / kernelSum : 0.0f;
-	int octaveCount = 1;
-	for (int p = 0; p < plan.pyramidCount; ++p)
-		if (plan.pyramid[p].levelCount > octaveCount) octaveCount = plan.pyramid[p].levelCount;
-	const float localGain = hg_scale_gain(0, octaveCount, plan.falloff);
+	const float localGain = plan.levelGain[0];
 	ParallelRows(out.y0, out.y1, [&](int y) {
 		HG_RGBA *row = filtered.Row(y);
 		const HG_RGBA *localRow = filtered.Row(y);

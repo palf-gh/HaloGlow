@@ -176,6 +176,15 @@ PF_Err HG_ParamsSetup(PF_InData *in_data, PF_OutData *out_data)
 		label = Loc(LocKey::STR_GLOW_ONLY_CHECKBOX, in_data);
 		PF_ADD_CHECKBOX(name.c_str(), label.c_str(), FALSE, PF_ParamFlag_SUPERVISE, HG_GLOW_ONLY);
 	}
+	if (!err) {
+		// Alpha Output (§3.14): After Effects worlds are straight, so Straight
+		// is the default; Premultiplied keeps RGB multiplied by alpha.
+		PF_ParamDef def;
+		AEFX_CLR_STRUCT(def);
+		const std::string name = Loc(LocKey::STR_ALPHA_OUTPUT, in_data);
+		const std::string items = Loc(LocKey::STR_ALPHA_OUTPUT_ITEMS, in_data);
+		PF_ADD_POPUP(name.c_str(), 2, HG_ALPHA_STRAIGHT, items.c_str(), HG_ALPHA_OUTPUT);
+	}
 	ERR(EndTopic(in_data, HG_TOPIC_OUTPUT_END));
 
 	if (!err) {

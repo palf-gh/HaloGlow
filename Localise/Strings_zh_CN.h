@@ -61,6 +61,10 @@ inline const char *GetString(LocKey::Key key) {
     return "仅光晕";
   case LocKey::STR_GLOW_ONLY_CHECKBOX:
     return "开";
+  case LocKey::STR_ALPHA_OUTPUT:
+    return "Alpha 输出";
+  case LocKey::STR_ALPHA_OUTPUT_ITEMS:
+    return "直接|预乘";
   case LocKey::STR_ALGORITHM_VERSION:
     return "算法版本";
   case LocKey::STR_UPDATE_AVAILABLE:

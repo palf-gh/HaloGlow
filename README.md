@@ -2,7 +2,7 @@
 
 [English](#english) · [日本語](#日本語) · [中文](#中文) · [한국어](#한국어)
 
-**Current plug-in version: 1.0.0 (release)**
+**Current plug-in version: 1.0.1 (release)**
 
 ---
 
@@ -21,6 +21,8 @@ sources without a hard edge. The design is specified in
 - Width and Height scale Size on each axis.
 - Gamma, Saturation and two-colour tint on the glow only; separate Glow and
   Source Opacity; Glow Only output with a matching alpha.
+- Alpha Output is Straight by default, as After Effects expects. Premultiplied
+  returns black-matted RGB for workflows that add the glow later.
 - GPU rendering through CUDA and OpenCL (Windows) and Metal (macOS), with a CPU
   path that uses the same filter and the same arithmetic.
 - Multi-Frame Rendering support.
@@ -45,6 +47,7 @@ sources without a hard edge. The design is specified in
 | | Luminance Space | Auto, Rec.709 / sRGB, Display P3, ACEScg | Auto |
 | Output | Glow Opacity / Source Opacity | 0–100 % | 100 % |
 | | Glow Only | on / off | off |
+| | Alpha Output | Straight / Premultiplied | Straight |
 
 ### Colour management
 
@@ -106,6 +109,16 @@ compares Metal, with the CPU reference implementation.
 
 ### Release notes
 
+**1.0.1** (2026-11-25)
+
+Bug-fix release.
+
+- Fixed the glow flickering when Size changes. The glow now spreads smoothly with Size. The blur right around each light source is now always applied, so the brightness of the light's core differs slightly from 1.0.0.
+- Fixed glows and semi-transparent edges looking dark on footage with transparency. HaloGlow now reads and writes straight alpha, as After Effects hands it over.
+- Added Alpha Output to the Output group. The default is Straight. Choosing Premultiplied gives the same output as 1.0.0.
+- Fixed OpenCL rendering not working on Windows.
+- Projects saved with 1.0.0 also show these fixes when opened.
+
 **1.0.0** (2026-11-06)
 
 First public release.
@@ -130,7 +143,7 @@ MIT — see [LICENSE](LICENSE).
 
 ## 日本語
 
-**現在のプラグインバージョン: 1.0.0（リリース）**
+**現在のプラグインバージョン: 1.0.1（リリース）**
 
 HaloGlowはAdobe After Effects用のMITライセンスのグローエフェクトです。粗い段から細かい段へ、各段のローパスをスクリーン合成し、光源の周りへ縁のない光の裾を広げます。設計は[`docs/HaloGlow_仕様書.md`](docs/HaloGlow_仕様書.md)にあります。
 
@@ -139,6 +152,7 @@ HaloGlowはAdobe After Effects用のMITライセンスのグローエフェク�
 - 各段のローパスをスクリーン合成します。サイズは光の広がる距離、減衰は段ごとの強さの比です。一面が白い領域は明るさ1を超えず、1を超えるHDRの値は切りません。
 - 幅と高さは、サイズに対する軸ごとの倍率です。
 - ガンマ、彩度、二色の着色はグローにだけ掛かります。グローと元画像の不透明度は別々に調整でき、グローのみの出力では対応するアルファも出力します。
+- アルファ出力の既定はAfter Effectsに合わせたストレートです。プリマルチプライは、グローを後から加算で重ねる場合など、黒でプリマルチプライしたRGBが必要なときに選びます。
 - GPUではWindowsでCUDAとOpenCL、macOSでMetalを使います。CPU経路も同じフィルターと同じ演算で描画します。
 - マルチフレームレンダリングに対応します。
 - パラメータ名は英語、日本語、簡体字中国語、韓国語で表示します。
@@ -162,6 +176,7 @@ HaloGlowはAdobe After Effects用のMITライセンスのグローエフェク�
 | | 輝度の色空間 | 自動、Rec.709 / sRGB、Display P3、ACEScg | 自動 |
 | 出力 | グローの不透明度／元画像の不透明度 | 0〜100% | 100% |
 | | グローのみ | オン／オフ | オフ |
+| | アルファ出力 | ストレート／プリマルチプライ | ストレート |
 
 ### 色管理
 
@@ -207,6 +222,16 @@ macOSでは`cmake -S . -B build/Mac -G Xcode`を使います。CUDA、OpenCL、M
 
 ### リリースノート
 
+**1.0.1**（2026-11-25）
+
+不具合を直した版です。
+
+- サイズを変えるとグローが明滅する不具合を直しました。グローの広がりはサイズに合わせてなめらかに変わります。光源のすぐ周りのぼかしが常にかかるようになったため、1.0.0とは光源の芯の明るさが少し変わります。
+- 透明な部分を含む素材で、グローや半透明の縁が黒っぽくなる不具合を直しました。After Effects の受け渡しに合わせて、ストレートアルファで読み書きするようにしました。
+- 出力グループに「アルファ出力」を加えました。既定はストレートです。プリマルチプライを選ぶと、1.0.0と同じ出力になります。
+- Windows で OpenCL の描画が動いていなかった不具合を直しました。
+- 1.0.0で保存したプロジェクトも、開くとこれらの修正後の見た目になります。
+
 **1.0.0**（2026-11-06）
 
 初回の公開版です。
@@ -231,7 +256,7 @@ MITです。[LICENSE](LICENSE)を参照してください。
 
 ## 中文
 
-**当前插件版本：1.0.0（发布版）**
+**当前插件版本：1.0.1（发布版）**
 
 HaloGlow 是一款采用 MIT 许可证的 Adobe After Effects 光晕效果。从粗到细，以滤色方式合成每一级的低通，在光源周围展开没有硬边的光晕。设计规格见 [`docs/HaloGlow_仕様書.md`](docs/HaloGlow_仕様書.md)（日语）。
 
@@ -240,6 +265,7 @@ HaloGlow 是一款采用 MIT 许可证的 Adobe After Effects 光晕效果。从
 - 以滤色方式合成每一级低通。大小是光晕展开的距离，衰减是各级强度之比。一片白色的区域亮度不超过 1，超过 1 的 HDR 值保持原样。
 - 宽度和高度是大小在各自轴上的倍率。
 - 伽马、饱和度和双色着色只作用于光晕；光晕不透明度与源图像不透明度分别调整；“仅光晕”输出带有对应的 Alpha。
+- Alpha 输出默认为与 After Effects 一致的“直接”。“预乘”返回以黑色预乘的 RGB，适用于之后再以相加方式叠加光晕等流程。
 - GPU 渲染在 Windows 上使用 CUDA 和 OpenCL，在 macOS 上使用 Metal；CPU 路径使用相同的滤波器和相同的运算。
 - 支持多帧渲染。
 - 参数名称提供英语、日语、简体中文和韩语。
@@ -263,6 +289,7 @@ HaloGlow 是一款采用 MIT 许可证的 Adobe After Effects 光晕效果。从
 | | 亮度色彩空间 | 自动、Rec.709 / sRGB、Display P3、ACEScg | 自动 |
 | 输出 | 光晕不透明度 / 源图像不透明度 | 0–100% | 100% |
 | | 仅光晕 | 开 / 关 | 关 |
+| | Alpha 输出 | 直接 / 预乘 | 直接 |
 
 ### 色彩管理
 
@@ -308,6 +335,16 @@ ctest --test-dir build/Win -C Release
 
 ### 发布说明
 
+**1.0.1**（2026-11-25）
+
+修复问题的版本。
+
+- 修复了改变“大小”时光晕闪烁的问题。光晕的扩散会随“大小”平滑变化。光源周围的模糊现在始终生效，因此光源核心的亮度与 1.0.0 略有不同。
+- 修复了含透明部分的素材上光晕和半透明边缘发黑的问题。现在按照 After Effects 的传递方式，以直接 Alpha 读写。
+- 在“输出”组中新增“Alpha 输出”。默认为“直接”。选择“预乘”会得到与 1.0.0 相同的输出。
+- 修复了 Windows 上 OpenCL 渲染无法工作的问题。
+- 用 1.0.0 保存的项目打开后也会呈现修复后的效果。
+
 **1.0.0**（2026-11-06）
 
 首次公开发布。
@@ -332,7 +369,7 @@ MIT，详见 [LICENSE](LICENSE)。
 
 ## 한국어
 
-**현재 플러그인 버전: 1.0.0(릴리스)**
+**현재 플러그인 버전: 1.0.1(릴리스)**
 
 HaloGlow는 MIT 라이선스의 Adobe After Effects 글로우 이펙트입니다. 거친 단계에서 가는 단계로, 각 단계의 저역 통과를 스크린으로 합성해 광원 주위에 가장자리가 갈라지지 않는 빛의 자락을 펼칩니다. 설계 사양은 [`docs/HaloGlow_仕様書.md`](docs/HaloGlow_仕様書.md)(일본어)에 있습니다.
 
@@ -341,6 +378,7 @@ HaloGlow는 MIT 라이선스의 Adobe After Effects 글로우 이펙트입니다
 - 각 단계의 저역 통과를 스크린으로 합성합니다. 크기는 빛이 퍼지는 거리이고, 감쇠는 단계마다의 세기 비율입니다. 하얗게 펼쳐진 영역은 밝기 1을 넘지 않으며, 1을 넘는 HDR 값은 자르지 않습니다.
 - 너비와 높이는 크기에 대한 축마다의 배율입니다.
 - 감마, 채도, 2색 착색은 글로우에만 적용됩니다. 글로우 불투명도와 원본 불투명도를 따로 조정할 수 있으며, 글로우만 출력할 때는 대응하는 알파도 출력합니다.
+- 알파 출력의 기본값은 After Effects에 맞춘 스트레이트입니다. 프리멀티플라이드는 글로우를 나중에 더하기로 겹치는 경우처럼 검정으로 프리멀티플라이한 RGB가 필요할 때 선택합니다.
 - GPU 렌더링은 Windows에서 CUDA와 OpenCL, macOS에서 Metal을 사용하며, CPU 경로도 같은 필터와 같은 연산으로 렌더링합니다.
 - 다중 프레임 렌더링을 지원합니다.
 - 매개변수 이름은 영어, 일본어, 중국어 간체, 한국어로 표시됩니다.
@@ -364,6 +402,7 @@ HaloGlow는 MIT 라이선스의 Adobe After Effects 글로우 이펙트입니다
 | | 휘도 색 공간 | 자동, Rec.709 / sRGB, Display P3, ACEScg | 자동 |
 | 출력 | 글로우 불투명도 / 원본 불투명도 | 0–100% | 100% |
 | | 글로우만 | 켜기 / 끄기 | 끄기 |
+| | 알파 출력 | 스트레이트 / 프리멀티플라이드 | 스트레이트 |
 
 ### 색 관리
 
@@ -408,6 +447,16 @@ macOS에서는 `cmake -S . -B build/Mac -G Xcode`를 사용합니다. CUDA, Open
 `hg_core_tests`는 추출, 톤, DC 이득, 타일 렌더링, PSF 모양과 연속성을 확인합니다. `hg_gpu_parity`는 CUDA와 OpenCL을, `hg_metal_parity`는 Metal을 각각 CPU 참조 구현과 비교합니다.
 
 ### 릴리스 노트
+
+**1.0.1**（2026-11-25）
+
+버그를 수정한 버전입니다.
+
+- 크기를 바꾸면 글로우가 깜박이던 문제를 수정했습니다. 글로우의 퍼짐이 크기에 맞춰 부드럽게 바뀝니다. 광원 바로 주변의 블러가 항상 적용되므로 광원 중심의 밝기가 1.0.0과 조금 다릅니다.
+- 투명한 부분이 있는 소스에서 글로우와 반투명 가장자리가 어둡게 보이던 문제를 수정했습니다. After Effects가 전달하는 방식에 맞춰 스트레이트 알파로 읽고 씁니다.
+- 출력 그룹에 "알파 출력"을 추가했습니다. 기본값은 스트레이트입니다. 프리멀티플라이드를 선택하면 1.0.0과 같은 출력이 됩니다.
+- Windows에서 OpenCL 렌더링이 작동하지 않던 문제를 수정했습니다.
+- 1.0.0으로 저장한 프로젝트도 열면 이 수정이 반영된 모습으로 보입니다.
 
 **1.0.0**（2026-11-06）
 
