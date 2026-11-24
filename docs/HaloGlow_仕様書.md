@@ -861,7 +861,7 @@ Falloff=50、等方、既存v0.3係数を再校正せず診断した。R=4は局
 表示名            HaloGlow（デバッグビルドは HaloGlow debug）
 Match Name        PALF HaloGlow（デバッグビルドは PALF HaloGlow debug）
 カテゴリ          Stylize
-製品版            1.0.0（PF_Stage_RELEASE、2026-11-06）
+製品版            1.0.1（PF_Stage_RELEASE、2026-11-25）
 アルゴリズム      新規適用は版2。保存済みの版1は版1の式のまま
 ライセンス        MIT
 最小ホスト        After Effects 2022（PiPL API 13.27）

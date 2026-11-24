@@ -2,7 +2,7 @@
 
 [English](#english) · [日本語](#日本語) · [中文](#中文) · [한국어](#한국어)
 
-**Current plug-in version: 1.0.0 (release)**
+**Current plug-in version: 1.0.1 (release)**
 
 ---
 
@@ -109,6 +109,16 @@ compares Metal, with the CPU reference implementation.
 
 ### Release notes
 
+**1.0.1** (2026-11-25)
+
+Bug-fix release.
+
+- Fixed the glow flickering when Size changes. The glow now spreads smoothly with Size. The blur right around each light source is now always applied, so the brightness of the light's core differs slightly from 1.0.0.
+- Fixed glows and semi-transparent edges looking dark on footage with transparency. HaloGlow now reads and writes straight alpha, as After Effects hands it over.
+- Added Alpha Output to the Output group. The default is Straight. Choosing Premultiplied gives the same output as 1.0.0.
+- Fixed OpenCL rendering not working on Windows.
+- Projects saved with 1.0.0 also show these fixes when opened.
+
 **1.0.0** (2026-11-06)
 
 First public release.
@@ -133,7 +143,7 @@ MIT — see [LICENSE](LICENSE).
 
 ## 日本語
 
-**現在のプラグインバージョン: 1.0.0（リリース）**
+**現在のプラグインバージョン: 1.0.1（リリース）**
 
 HaloGlowはAdobe After Effects用のMITライセンスのグローエフェクトです。粗い段から細かい段へ、各段のローパスをスクリーン合成し、光源の周りへ縁のない光の裾を広げます。設計は[`docs/HaloGlow_仕様書.md`](docs/HaloGlow_仕様書.md)にあります。
 
@@ -212,6 +222,16 @@ macOSでは`cmake -S . -B build/Mac -G Xcode`を使います。CUDA、OpenCL、M
 
 ### リリースノート
 
+**1.0.1**（2026-11-25）
+
+不具合を直した版です。
+
+- サイズを変えるとグローが明滅する不具合を直しました。グローの広がりはサイズに合わせてなめらかに変わります。光源のすぐ周りのぼかしが常にかかるようになったため、1.0.0とは光源の芯の明るさが少し変わります。
+- 透明な部分を含む素材で、グローや半透明の縁が黒っぽくなる不具合を直しました。After Effects の受け渡しに合わせて、ストレートアルファで読み書きするようにしました。
+- 出力グループに「アルファ出力」を加えました。既定はストレートです。プリマルチプライを選ぶと、1.0.0と同じ出力になります。
+- Windows で OpenCL の描画が動いていなかった不具合を直しました。
+- 1.0.0で保存したプロジェクトも、開くとこれらの修正後の見た目になります。
+
 **1.0.0**（2026-11-06）
 
 初回の公開版です。
@@ -236,7 +256,7 @@ MITです。[LICENSE](LICENSE)を参照してください。
 
 ## 中文
 
-**当前插件版本：1.0.0（发布版）**
+**当前插件版本：1.0.1（发布版）**
 
 HaloGlow 是一款采用 MIT 许可证的 Adobe After Effects 光晕效果。从粗到细，以滤色方式合成每一级的低通，在光源周围展开没有硬边的光晕。设计规格见 [`docs/HaloGlow_仕様書.md`](docs/HaloGlow_仕様書.md)（日语）。
 
@@ -315,6 +335,16 @@ ctest --test-dir build/Win -C Release
 
 ### 发布说明
 
+**1.0.1**（2026-11-25）
+
+修复问题的版本。
+
+- 修复了改变“大小”时光晕闪烁的问题。光晕的扩散会随“大小”平滑变化。光源周围的模糊现在始终生效，因此光源核心的亮度与 1.0.0 略有不同。
+- 修复了含透明部分的素材上光晕和半透明边缘发黑的问题。现在按照 After Effects 的传递方式，以直接 Alpha 读写。
+- 在“输出”组中新增“Alpha 输出”。默认为“直接”。选择“预乘”会得到与 1.0.0 相同的输出。
+- 修复了 Windows 上 OpenCL 渲染无法工作的问题。
+- 用 1.0.0 保存的项目打开后也会呈现修复后的效果。
+
 **1.0.0**（2026-11-06）
 
 首次公开发布。
@@ -339,7 +369,7 @@ MIT，详见 [LICENSE](LICENSE)。
 
 ## 한국어
 
-**현재 플러그인 버전: 1.0.0(릴리스)**
+**현재 플러그인 버전: 1.0.1(릴리스)**
 
 HaloGlow는 MIT 라이선스의 Adobe After Effects 글로우 이펙트입니다. 거친 단계에서 가는 단계로, 각 단계의 저역 통과를 스크린으로 합성해 광원 주위에 가장자리가 갈라지지 않는 빛의 자락을 펼칩니다. 설계 사양은 [`docs/HaloGlow_仕様書.md`](docs/HaloGlow_仕様書.md)(일본어)에 있습니다.
 
@@ -417,6 +447,16 @@ macOS에서는 `cmake -S . -B build/Mac -G Xcode`를 사용합니다. CUDA, Open
 `hg_core_tests`는 추출, 톤, DC 이득, 타일 렌더링, PSF 모양과 연속성을 확인합니다. `hg_gpu_parity`는 CUDA와 OpenCL을, `hg_metal_parity`는 Metal을 각각 CPU 참조 구현과 비교합니다.
 
 ### 릴리스 노트
+
+**1.0.1**（2026-11-25）
+
+버그를 수정한 버전입니다.
+
+- 크기를 바꾸면 글로우가 깜박이던 문제를 수정했습니다. 글로우의 퍼짐이 크기에 맞춰 부드럽게 바뀝니다. 광원 바로 주변의 블러가 항상 적용되므로 광원 중심의 밝기가 1.0.0과 조금 다릅니다.
+- 투명한 부분이 있는 소스에서 글로우와 반투명 가장자리가 어둡게 보이던 문제를 수정했습니다. After Effects가 전달하는 방식에 맞춰 스트레이트 알파로 읽고 씁니다.
+- 출력 그룹에 "알파 출력"을 추가했습니다. 기본값은 스트레이트입니다. 프리멀티플라이드를 선택하면 1.0.0과 같은 출력이 됩니다.
+- Windows에서 OpenCL 렌더링이 작동하지 않던 문제를 수정했습니다.
+- 1.0.0으로 저장한 프로젝트도 열면 이 수정이 반영된 모습으로 보입니다.
 
 **1.0.0**（2026-11-06）
 
