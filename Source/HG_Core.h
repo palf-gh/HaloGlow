@@ -147,6 +147,11 @@ struct Plan {
 	float localKernel[kLocalSize * kLocalSize] = {};	// W = a0 d + sum b_h H_h
 	bool hasLocalSpread = false;	// any b_h > 0 (else W is a0 * delta)
 	float falloff = 50.0f;			// UI Falloff, version-2 octave ratio (§8.1)
+	// Version 2: continuous octave span from Size and the resulting per-level
+	// gains ([0] local kernel, [j] pyramid level j). The top level is faded by
+	// the fractional part of the span so Size never steps (§8.1).
+	double octaveSpan = 0.0;
+	float levelGain[kMaxLevels + 1] = {};
 	int pyramidCount = 0;
 	PyramidPlan pyramid[2];
 	Rect inputRect;					// light-source rect: E is zero outside (§8.3)
