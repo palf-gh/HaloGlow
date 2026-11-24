@@ -148,7 +148,6 @@ int RunCase(MetalDevice &dev, const Case &c, unsigned seed)
 		bgra[i * 4 + 1] = bright ? 30.0f : v;
 		bgra[i * 4 + 2] = bright ? 65504.0f * v : v * v;
 		bgra[i * 4 + 3] = (seed % 7u) == 0u ? 0.0f : ((seed % 5u) == 0u ? 0.37f : 1.0f);
-		for (int ch = 0; ch < 3; ++ch) bgra[i * 4 + ch] *= bgra[i * 4 + 3];	// premultiplied world
 		if ((seed % 997u) == 0u) bgra[i * 4 + 2] = NAN;
 	}
 	const hg::Rect light = c.clipLight ? hg::Rect { in.x0 + 20, in.y0 + 15, in.x1 - 30, in.y1 - 25 } : in;
@@ -167,7 +166,8 @@ int RunCase(MetalDevice &dev, const Case &c, unsigned seed)
 	for (int y = world.y0; y < world.y1; ++y)
 		for (int x = world.x0; x < world.x1; ++x) {
 			const std::size_t i = (std::size_t(y - in.y0) * in.Width() + (x - in.x0)) * 4;
-			src.Row(y)[x - world.x0] = hg_sanitise(HG_RGBA { bgra[i + 2], bgra[i + 1], bgra[i], bgra[i + 3] });
+			const HG_RGBA s = hg_sanitise(HG_RGBA { bgra[i + 2], bgra[i + 1], bgra[i], bgra[i + 3] });
+			src.Row(y)[x - world.x0] = HG_RGBA { s.r * s.a, s.g * s.a, s.b * s.a, s.a };
 		}
 	hg::Image ref;
 	hg::RenderCPU(plan, src, ref);
@@ -188,30 +188,51 @@ int RunCase(MetalDevice &dev, const Case &c, unsigned seed)
 	}
 	double worst = 0.0;
 	long bad = 0;
+	long tinyAlpha = 0;
+	const bool premul = c.s.premultipliedOutput;
 	for (int y = out.y0; y < out.y1; ++y)
 		for (int x = out.x0; x < out.x1; ++x) {
 			const HG_RGBA p = ref.At(x, y);
 			float r = 0, g = 0, b = 0, a4 = 0;
 			if (!plan.glowActive) {
-				// Bypass: the input itself, premultiplied RGB and alpha faded by
-				// Source Opacity; transparent black for Glow Only.
+				// Bypass: straight output keeps the input RGB and fades alpha by
+				// Source Opacity; premultiplied output multiplies RGB by the faded
+				// alpha. Transparent black for Glow Only.
 				const int lx = x - world.x0, ly = y - world.y0;
 				if (lx >= 0 && ly >= 0 && lx < world.Width() && ly < world.Height() && !c.s.glowOnly) {
 					const std::size_t k = (std::size_t(ly) * srcPitch + lx) * 4;
 					const float q = c.s.sourceOpacity / 100.0f;
-					b = upload[k] * q;
-					g = upload[k + 1] * q;
-					r = upload[k + 2] * q;
-					a4 = upload[k + 3] * q;
+					const float m = premul ? upload[k + 3] * q : 1.0f;
+					b = upload[k] * m;
+					g = upload[k + 1] * m;
+					r = upload[k + 2] * m;
+					a4 = (premul || q != 1.0f) ? upload[k + 3] * q : upload[k + 3];
 				}
-			} else {
+			} else if (premul) {
 				r = p.r;
 				g = p.g;
 				b = p.b;
 				a4 = p.a;
+			} else {
+				a4 = p.a;
+				if (p.a > 0.0f) {
+					const double big = 3.402823466e38;
+					r = static_cast<float>(std::min(big, double(p.r) / p.a));
+					g = static_cast<float>(std::min(big, double(p.g) / p.a));
+					b = static_cast<float>(std::min(big, double(p.b) / p.a));
+				}
 			}
 			const float refv[4] = { b, g, r, a4 };
 			const std::size_t k = (std::size_t(y - out.y0) * dstPitch + (x - out.x0)) * 4;
+			if (plan.glowActive && !premul && p.a < 1e-30f && got[k + 3] < 1e-30f &&
+				(p.a > 0.0f || got[k + 3] > 0.0f)) {
+				// Straight RGB at an underflowing alpha is a ratio of denormals;
+				// FTZ differs per backend and spec 6.3 records it instead of
+				// requiring a match. The alpha itself must still agree.
+				++tinyAlpha;
+				if (!(std::fabs(double(got[k + 3]) - p.a) <= 1e-4)) ++bad;
+				continue;
+			}
 			for (int ch = 0; ch < 4; ++ch) {
 				const double a = refv[ch], v = got[k + ch];
 				if (std::isnan(a) && std::isnan(v)) continue;
@@ -224,7 +245,7 @@ int RunCase(MetalDevice &dev, const Case &c, unsigned seed)
 				}
 			}
 		}
-	std::printf("  %-28s worst/tol=%.3f bad=%ld\n", c.name.c_str(), worst, bad);
+	std::printf("  %-28s worst/tol=%.3f bad=%ld tiny-alpha=%ld\n", c.name.c_str(), worst, bad, tinyAlpha);
 	return bad == 0 ? 0 : 1;
 }
 
@@ -276,6 +297,9 @@ int main()
 	add("light clipped, tile", [](hg::Settings &s) { s.size = 2.0f; s.width = 300.0f; });
 	cases.back().clipLight = true;
 	cases.back().tile = true;
+	add("premultiplied output", [](hg::Settings &s) { s.premultipliedOutput = true; s.sourceOpacity = 70.0f; });
+	add("premultiplied bypass", [](hg::Settings &s) { s.premultipliedOutput = true; s.intensity = 0.0f; });
+	add("straight bypass at 100", [](hg::Settings &s) { s.intensity = 0.0f; });
 		int failures = 0;
 		unsigned seed = 7u;
 		for (const Case &c : cases) failures += RunCase(dev, c, seed++);

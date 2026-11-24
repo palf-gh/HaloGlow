@@ -90,6 +90,7 @@ Glow
     Glow Opacity           100 %
     Source Opacity         100 %
     □ Glow Only
+    Alpha Output           Straight
 ```
 
 ホスト標準のパラメータUIを用いる。独自パネル、別ウィンドウ、追加の設定画面は初版に設けない。表示名は英語（イギリス綴り）を基準とし、日本語・簡体字中国語・韓国語の表示名を第18.3節に定める。
@@ -98,7 +99,7 @@ Glow
 
 範囲は0〜8、既定値は1。通常域の内部ゲインはその値を使う。PSFで広げた発光成分に掛け、その後にSaturation、Gamma、着色の順で処理する。最終段でフェードするGlow Opacityとは作用位置を分ける。
 
-0では発光成分を0にしてピラミッドを作らず、Source Opacityだけを適用する。グローのみ出力では透明な黒を返す。原画のバイト単位コピーは、Source Opacity=100で原画をそのまま返せる場合に限る。
+0では発光成分を0にしてピラミッドを作らず、Source Opacityだけを適用する。グローのみ出力では透明な黒を返す。原画のバイト単位コピーは、Alpha Output=StraightかつSource Opacity=100で原画をそのまま返せる場合に限る。Straightでは原画のRGBを変えずにアルファだけをSource Opacityで掛け、Premultipliedでは原画RGBにアルファを掛けてからRGBとアルファを同じ割合で掛ける。
 
 ### 3.3 Size
 
@@ -152,7 +153,7 @@ Colour Strengthは0〜100%、既定0%。0%では元の発光色、100%では二�
 
 ### 3.11 Glow OpacityとSource Opacity
 
-範囲はそれぞれ0〜100%、既定100%。Glow Opacityは階調・着色まで終えた発光RGBとアルファを最終段でフェードする。Source Opacityは原画のプリマルチプライRGBとアルファを同じ割合でフェードする。
+範囲はそれぞれ0〜100%、既定100%。Glow Opacityは階調・着色まで終えた発光RGBとアルファを最終段でフェードする。Source Opacityは原画のプリマルチプライRGBとアルファを同じ割合でフェードする（出力時のアルファ表現は第3.13節）。
 
 Source Opacity=0でもGlow Opacityが正なら発光は残る。Glow Opacity=0なら原画だけを返す。グローのみではSource Opacityは出力に影響せず、UIでは無効表示にするが値は保持する。無効表示は`PF_ParamFlag_SUPERVISE`を付けたGlow Onlyの変更と`PF_Cmd_UPDATE_PARAMS_UI`で更新する。
 
@@ -202,6 +203,19 @@ Autoキャッシュは、レンダー結果の正しさを保証する唯一の�
 - 全レンダーを大域ロックで直列化しない。
 - Autoのとき、`PF_Cmd_SMART_PRE_RENDER`で解決済みの係数を`GuidMixInPtr`（`PF_OutFlag2_I_MIX_GUID_DEPENDENCIES`）へ混ぜ、係数の変化をホストのキャッシュキーへ反映する。手動指定のときは混ぜない。
 - 取得できない状況でもMFRのレンダー自体は成立する。
+
+### 3.13 Alpha Output
+
+出力ワールドのアルファ表現を選ぶpopup。1.0.0の公開後に追加した（保存ID 27、第18.2節）。既定はStraightとする。
+
+```text
+1  Straight        After Effectsのワールドと同じストレートアルファ（既定）
+2  Premultiplied   黒でプリマルチプライしたRGB
+```
+
+After Effectsはエフェクトのワールドをストレートアルファで受け渡すので、入力は選択にかかわらずストレートとして読む（第6.1節）。Straightは処理後のプリマルチプライ値をαで割り戻して返す。Premultipliedは割り戻さずに返す。After Effectsはそれもストレートとして扱うので、半透明部分とレイヤー外のグローはαを二重に掛けた暗い見た目になる。グローのみを加算で重ねるなど、黒でプリマルチプライした光を前提とする後段のための選択肢である。不透明な画素（α=1）の結果はどちらも同じである。
+
+1.0.0はワールドをプリマルチプライ表現と誤認し、常にPremultipliedに相当する出力をしていた。この項目の追加で既定の出力をStraightへ戻した。保存済みの1.0.0プロジェクトもStraightで開き、半透明部分とレイヤー外のグローの見た目が変わる。1.0.0と同じ見た目が必要な場合はPremultipliedを選ぶ。
 
 ## 4. 初版の機能範囲
 
@@ -288,7 +302,7 @@ PSFの正規化は、広がりを変更しただけで発光成分の総量が�
 入力Adapterでは、色管理変換と数値形式変換を分離する。
 
 - 色管理変換：初版のAdapterは行わない。ホストから作業RGBとして渡された画像は、その値を使う（第2.2節）。エフェクト側で任意のICC／OCIO変換を実施できることを初版の前提にしない。将来Input Transferを追加する場合は、α>0でstraight化→変換→再premultiplyとし、α=0は計算用RGBを0にする。CPU側でstraight化する場合はFP64を使用し、FP32の微小αで中間値をオーバーフローさせない。
-- 数値形式変換：8-bitと16-bitの整数値をそれぞれSDKの白基準へ正規化してFP32にする。特にAEの16-bit白を一般画像の65535と決めつけず、PF_MAX_CHAN16を使用する。プリマルチプライの扱い、非有限値の0置換、αの0〜1制限、逆変換と格納時の丸め・範囲制限もAdapterで一元化する。After Effectsはエフェクトのワールドを黒でプリマルチプライした表現で受け渡す（α=0のRGBを残す`preserve_rgb_of_zero_alpha`が別に用意されているのはこのためである）。従ってAdapterはαの掛け直しも割戻しも行わず、本仕様のプリマルチプライ表現のまま読み書きする。この前提はホスト上の半透明素材の確認（§12.3）で検証する。GPU経路ではホストが渡すFP32のBGRA画像を同じ規則で読む。
+- 数値形式変換：8-bitと16-bitの整数値をそれぞれSDKの白基準へ正規化してFP32にする。特にAEの16-bit白を一般画像の65535と決めつけず、PF_MAX_CHAN16を使用する。プリマルチプライの扱い、非有限値の0置換、αの0〜1制限、逆変換と格納時の丸め・範囲制限もAdapterで一元化する。After Effectsはエフェクトのワールドをストレートアルファで受け渡す（α=0の画素がRGBを持てるので`preserve_rgb_of_zero_alpha`や`PF_OutFlag2_REVEALS_ZERO_ALPHA`がある）。Adapterは読込時にサニタイズしたストレート値へαを掛けて本仕様のプリマルチプライ表現にし、格納時はAlpha Output（第3.13節）がStraightならα>0の画素をαで割り戻し、α=0のRGBを0とする。割戻しはCPUではFP64、GPUでは逆数を掛けずに除算で行い、微小αでのオーバーフローを避ける。Premultipliedでは割り戻さない。GPU経路ではホストが渡すFP32のBGRA画像を同じ規則で読み書きする。1.0.0はワールドをプリマルチプライ表現と誤認して読み書きしていた。ホスト上で透明背景のグローが白い背景を暗くすることで確認し、修正した。
 
 ### 6.2 しきい値の割当て
 
@@ -682,6 +696,7 @@ Colour Strength=0のときのSaturation=0で無彩色、Colour Strength=0で選�
 
 - α=0の隠れRGBが発光源にならない。
 - 黒い素材は、Threshold=0でもグローのRGB・アルファを生成しない。半透明の黒い原画のアルファを光なしで増やさない。
+- Alpha Output=Straightで、透明背景に出た白いグローは下の明るい背景を暗くしない。Intensity=0、Source Opacity=50の半透明素材は、レイヤーの不透明度50%と同じ見た目になる。
 - 文字の外側へRGBとグローアルファが広がる。
 - Source Opacity=100の完全不透明の入力では出力alphaが1のまま。
 - 透明素材を黒・白・有彩色背景へ重ね、暗い縁やRGBの異常増幅が出ない。
@@ -886,7 +901,10 @@ Match Nameとパラメータの保存IDは公開後に変更しない。リポ�
 24  HG_GLOW_ONLY                checkbox、既定off
 25  HG_TOPIC_OUTPUT_END
 26  HG_ALGORITHM_VERSION        非表示の整数。新規適用時に現行版、既存の保存値は維持
+27  HG_ALPHA_OUTPUT             popup、既定 Straight(1)。1.0.0の後に追加
 ```
+
+UIの並びはID 24（HG_GLOW_ONLY）までIDと同じである。HG_ALPHA_OUTPUTは出力グループのGlow Onlyの直後（index 25）に表示し、HG_TOPIC_OUTPUT_ENDとHG_ALGORITHM_VERSIONはそれぞれindex 26と27へずれる。実装は`HG_Index()`でIDをindexへ変換する。ホストはIDで保存値を対応付けるので、1.0.0のプロジェクトはHG_ALPHA_OUTPUTを既定値（Straight）で開く。
 
 HG_GPU_STATUSは、エフェクトコントロールの先頭に置く読み取り専用の表示である。ホストがGPUデバイスを準備したか、直前のレンダーがGPUで完了したかを示し、使用中はフレームワーク名とデバイス名を添える。画像処理の操作ではないので、第4章の16項目には数えない。デバイス名の記録はデバイスのセットアップ時に行い、レンダーは完了したかどうかの原子的な値だけを書く。高さは40とする。新しい公開版があるときだけ、第18.4節のとおり一行（18）足す。
 
@@ -921,6 +939,9 @@ TOPIC_OUTPUT         Output             出力               输出           �
 GLOW_OPACITY         Glow Opacity       グローの不透明度   光晕不透明度   글로우 불투명도
 SOURCE_OPACITY       Source Opacity     元画像の不透明度   源图像不透明度 원본 불투명도
 GLOW_ONLY            Glow Only          グローのみ         仅光晕         글로우만
+ALPHA_OUTPUT         Alpha Output       アルファ出力       Alpha 输出     알파 출력
+AO_STRAIGHT          Straight           ストレート         直接           스트레이트
+AO_PREMULTIPLIED     Premultiplied      プリマルチプライ   预乘           프리멀티플라이드
 GPU_STATUS_NAME      GPU Acceleration   GPU アクセラレーション GPU 加速   GPU 가속
 GPU_STATUS_ACTIVE    GPU acceleration active  GPU アクセラレーション: 有効  GPU 加速：已启用  GPU 가속: 활성
 GPU_STATUS_READY     GPU acceleration ready   GPU アクセラレーション: 準備完了  GPU 加速：已就绪  GPU 가속: 준비 완료
@@ -963,6 +984,7 @@ popupの「Rec.709 / sRGB」「Display P3」「ACEScg」は規格名なので、
 - 開発中の追記：§18.2にGPUステータス表示（ID 1）を加え、以降のIDを繰り下げた。
 - 開発中の追記：§8.3で、発光源をレイヤー自身の矩形の内側に限ることにした。
 - 初回実装時の追記：§6.1にホストのワールドがプリマルチプライ表現であること、§7.2に端数のある縦横比の二重ピラミッド混合、§7.3に半オクターブ基底Bin5、§7.4に局所FIRのσ=1.5 pxとE_EEFの重み10、§17.3に暫定校正（アルゴリズム版1）の条件と結果を加えた。
+- 1.0.0後の修正：§6.1のワールド表現をストレートアルファへ訂正し、§3.13 Alpha Output（保存ID 27）を加えた。§8.1の版2でSizeを連続な段の広がりΛにした。
 
 ### A.2 情報の出どころと責任
 

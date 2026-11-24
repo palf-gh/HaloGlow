@@ -144,6 +144,7 @@ void FillPixelParams(const Settings &s, float gain, HG_PixelParams &p)
 	p.sourceOpacity = s.sourceOpacity / 100.0f;
 	p.glowOnly = s.glowOnly ? 1 : 0;
 	p.algorithmVersion = s.algorithmVersion;
+	p.premultipliedOutput = s.premultipliedOutput ? 1 : 0;
 }
 
 void BuildLocalKernel(const Coefficients &c, double sigmaScaleX, double sigmaScaleY,

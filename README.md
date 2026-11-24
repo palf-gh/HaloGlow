@@ -21,6 +21,8 @@ sources without a hard edge. The design is specified in
 - Width and Height scale Size on each axis.
 - Gamma, Saturation and two-colour tint on the glow only; separate Glow and
   Source Opacity; Glow Only output with a matching alpha.
+- Alpha Output is Straight by default, as After Effects expects. Premultiplied
+  returns black-matted RGB for workflows that add the glow later.
 - GPU rendering through CUDA and OpenCL (Windows) and Metal (macOS), with a CPU
   path that uses the same filter and the same arithmetic.
 - Multi-Frame Rendering support.
@@ -45,6 +47,7 @@ sources without a hard edge. The design is specified in
 | | Luminance Space | Auto, Rec.709 / sRGB, Display P3, ACEScg | Auto |
 | Output | Glow Opacity / Source Opacity | 0–100 % | 100 % |
 | | Glow Only | on / off | off |
+| | Alpha Output | Straight / Premultiplied | Straight |
 
 ### Colour management
 
@@ -139,6 +142,7 @@ HaloGlowはAdobe After Effects用のMITライセンスのグローエフェク�
 - 各段のローパスをスクリーン合成します。サイズは光の広がる距離、減衰は段ごとの強さの比です。一面が白い領域は明るさ1を超えず、1を超えるHDRの値は切りません。
 - 幅と高さは、サイズに対する軸ごとの倍率です。
 - ガンマ、彩度、二色の着色はグローにだけ掛かります。グローと元画像の不透明度は別々に調整でき、グローのみの出力では対応するアルファも出力します。
+- アルファ出力の既定はAfter Effectsに合わせたストレートです。プリマルチプライは、グローを後から加算で重ねる場合など、黒でプリマルチプライしたRGBが必要なときに選びます。
 - GPUではWindowsでCUDAとOpenCL、macOSでMetalを使います。CPU経路も同じフィルターと同じ演算で描画します。
 - マルチフレームレンダリングに対応します。
 - パラメータ名は英語、日本語、簡体字中国語、韓国語で表示します。
@@ -162,6 +166,7 @@ HaloGlowはAdobe After Effects用のMITライセンスのグローエフェク�
 | | 輝度の色空間 | 自動、Rec.709 / sRGB、Display P3、ACEScg | 自動 |
 | 出力 | グローの不透明度／元画像の不透明度 | 0〜100% | 100% |
 | | グローのみ | オン／オフ | オフ |
+| | アルファ出力 | ストレート／プリマルチプライ | ストレート |
 
 ### 色管理
 
@@ -240,6 +245,7 @@ HaloGlow 是一款采用 MIT 许可证的 Adobe After Effects 光晕效果。从
 - 以滤色方式合成每一级低通。大小是光晕展开的距离，衰减是各级强度之比。一片白色的区域亮度不超过 1，超过 1 的 HDR 值保持原样。
 - 宽度和高度是大小在各自轴上的倍率。
 - 伽马、饱和度和双色着色只作用于光晕；光晕不透明度与源图像不透明度分别调整；“仅光晕”输出带有对应的 Alpha。
+- Alpha 输出默认为与 After Effects 一致的“直接”。“预乘”返回以黑色预乘的 RGB，适用于之后再以相加方式叠加光晕等流程。
 - GPU 渲染在 Windows 上使用 CUDA 和 OpenCL，在 macOS 上使用 Metal；CPU 路径使用相同的滤波器和相同的运算。
 - 支持多帧渲染。
 - 参数名称提供英语、日语、简体中文和韩语。
@@ -263,6 +269,7 @@ HaloGlow 是一款采用 MIT 许可证的 Adobe After Effects 光晕效果。从
 | | 亮度色彩空间 | 自动、Rec.709 / sRGB、Display P3、ACEScg | 自动 |
 | 输出 | 光晕不透明度 / 源图像不透明度 | 0–100% | 100% |
 | | 仅光晕 | 开 / 关 | 关 |
+| | Alpha 输出 | 直接 / 预乘 | 直接 |
 
 ### 色彩管理
 
@@ -341,6 +348,7 @@ HaloGlow는 MIT 라이선스의 Adobe After Effects 글로우 이펙트입니다
 - 각 단계의 저역 통과를 스크린으로 합성합니다. 크기는 빛이 퍼지는 거리이고, 감쇠는 단계마다의 세기 비율입니다. 하얗게 펼쳐진 영역은 밝기 1을 넘지 않으며, 1을 넘는 HDR 값은 자르지 않습니다.
 - 너비와 높이는 크기에 대한 축마다의 배율입니다.
 - 감마, 채도, 2색 착색은 글로우에만 적용됩니다. 글로우 불투명도와 원본 불투명도를 따로 조정할 수 있으며, 글로우만 출력할 때는 대응하는 알파도 출력합니다.
+- 알파 출력의 기본값은 After Effects에 맞춘 스트레이트입니다. 프리멀티플라이드는 글로우를 나중에 더하기로 겹치는 경우처럼 검정으로 프리멀티플라이한 RGB가 필요할 때 선택합니다.
 - GPU 렌더링은 Windows에서 CUDA와 OpenCL, macOS에서 Metal을 사용하며, CPU 경로도 같은 필터와 같은 연산으로 렌더링합니다.
 - 다중 프레임 렌더링을 지원합니다.
 - 매개변수 이름은 영어, 일본어, 중국어 간체, 한국어로 표시됩니다.
@@ -364,6 +372,7 @@ HaloGlow는 MIT 라이선스의 Adobe After Effects 글로우 이펙트입니다
 | | 휘도 색 공간 | 자동, Rec.709 / sRGB, Display P3, ACEScg | 자동 |
 | 출력 | 글로우 불투명도 / 원본 불투명도 | 0–100% | 100% |
 | | 글로우만 | 켜기 / 끄기 | 끄기 |
+| | 알파 출력 | 스트레이트 / 프리멀티플라이드 | 스트레이트 |
 
 ### 색 관리
 

@@ -61,6 +61,10 @@ inline const char *GetString(LocKey::Key key) {
     return "글로우만";
   case LocKey::STR_GLOW_ONLY_CHECKBOX:
     return "켜기";
+  case LocKey::STR_ALPHA_OUTPUT:
+    return "알파 출력";
+  case LocKey::STR_ALPHA_OUTPUT_ITEMS:
+    return "스트레이트|프리멀티플라이드";
   case LocKey::STR_ALGORITHM_VERSION:
     return "알고리즘 버전";
   case LocKey::STR_UPDATE_AVAILABLE:
