@@ -166,9 +166,10 @@ void BuildLocalKernel(const Coefficients &c, double sigmaScaleX, double sigmaSca
 }
 
 // Version 2 (§8.1): octaves between the local kernel and the coarsest level.
-// log2(R) + 1.5 keeps the integer depths the first release used at typical
-// sizes, but is continuous and monotone in Size.
-constexpr double kScaleOctaveOffset = 1.5;
+// log2(R) + 1 gives the depth the first release used at powers of two (Size
+// 64 -> 7 full levels) and the same output extent, but is continuous and
+// monotone in Size.
+constexpr double kScaleOctaveOffset = 1.0;
 
 double ScaleOctaveSpan(double majorRadius)
 {
